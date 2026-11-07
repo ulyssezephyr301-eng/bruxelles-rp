@@ -8,6 +8,7 @@ const http = require('http');
 
 // ───────── CONFIG ─────────
 const CFG = {
+  PANEL_CHANNEL: '1536145374245560320',     // salon du panneau d'identité
   REQUEST_CHANNEL: '1568659952476889088',   // demandes d'identité (staff)
   CARD_LOG_CHANNEL: '1568662351065129051',  // logs cartes validées / refusées
   BOT_LOG_CHANNEL: '1564203403792613466',   // logs du bot (commandes, erreurs...)
@@ -45,6 +46,7 @@ async function initDb() {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT, action TEXT, staff_id TEXT, reason TEXT, at TEXT
   )`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
 }
 const getIdentity = async (uid) =>
   (await db.execute({ sql: 'SELECT * FROM identities WHERE user_id = ?', args: [uid] })).rows[0] || null;
@@ -63,73 +65,204 @@ async function genCardNumber() {
 }
 
 // ───────── PAYS → CODE 3 LETTRES ─────────
-// CODE|noms de pays|débuts de nationalité (sans accents)
-const COUNTRIES = `FRA|france|francais
-BEL|belgique|belge
-LUX|luxembourg|luxembourgeois
-NLD|pays bas,hollande|neerlandais,hollandais
-DEU|allemagne|allemand
-ITA|italie|italien
-ESP|espagne|espagnol
-PRT|portugal|portugais
-CHE|suisse|suisse
-GBR|royaume uni,angleterre,grande bretagne|britannique,anglais
-IRL|irlande|irlandais
-AUT|autriche|autrichien
-POL|pologne|polonais
-ROU|roumanie|roumain
-BGR|bulgarie|bulgare
-GRC|grece|grec
-HRV|croatie|croate
-SRB|serbie|serbe
+// CODE|noms de pays (sans accents)|débuts de nationalité (sans accents)
+const COUNTRIES = `AFG|afghanistan|afghan
+ZAF|afrique du sud|sud africain
 ALB|albanie|albanais
-UKR|ukraine|ukrainien
-RUS|russie|russe
-TUR|turquie|turc
-SWE|suede|suedois
-NOR|norvege|norvegien
-DNK|danemark|danois
-FIN|finlande|finlandais
-CZE|tchequie,republique tcheque|tcheque
-HUN|hongrie|hongrois
-MAR|maroc|marocain
 DZA|algerie|algerien
-TUN|tunisie|tunisien
-EGY|egypte|egyptien
-SEN|senegal|senegalais
-CIV|cote d ivoire|ivoirien
-CMR|cameroun|camerounais
-COD|rd congo,republique democratique du congo|congolais
-COG|congo,republique du congo|
-MLI|mali|malien
-GIN|guinee|guineen
-MDG|madagascar|malgache
-HTI|haiti|haitien
-USA|etats unis,usa,etats unis d amerique|americain
-CAN|canada|canadien
-MEX|mexique|mexicain
-BRA|bresil|bresilien
+DEU|allemagne|allemand
+AND|andorre|andorran
+AGO|angola|angolais
+ATG|antigua et barbuda|antiguayen
+SAU|arabie saoudite|saoudien
 ARG|argentine|argentin
-COL|colombie|colombien
+ARM|armenie|armenien
+AUS|australie|australien
+AUT|autriche|autrichien
+AZE|azerbaidjan|azerbaidjanais,azeri
+BHS|bahamas|bahameen
+BHR|bahrein|bahreini
+BGD|bangladesh|bangladais
+BRB|barbade|barbadien
+BEL|belgique|belge
+BLZ|belize|belizien
+BEN|benin|beninois
+BTN|bhoutan|bhoutanais
+BLR|bielorussie,belarus|bielorusse
+MMR|birmanie,myanmar|birman
+BOL|bolivie|bolivien
+BIH|bosnie herzegovine,bosnie|bosnien
+BWA|botswana|botswanais
+BRA|bresil|bresilien
+BRN|brunei|bruneien
+BGR|bulgarie|bulgare
+BFA|burkina faso|burkinabe
+BDI|burundi|burundais
+KHM|cambodge|cambodgien
+CMR|cameroun|camerounais
+CAN|canada|canadien
+CPV|cap vert|cap verdien
 CHL|chili|chilien
-PER|perou|peruvien
 CHN|chine|chinois
-JPN|japon|japonais
+CYP|chypre|chypriote
+COL|colombie|colombien
+COM|comores|comorien
+COG|congo,republique du congo,congo brazzaville|
+COD|rd congo,republique democratique du congo,congo kinshasa|
+PRK|coree du nord|nord coreen
 KOR|coree du sud,coree|sud coreen,coreen
+CRI|costa rica|costaricien,costa ricien
+CIV|cote d ivoire|ivoirien
+HRV|croatie|croate
+CUB|cuba|cubain
+DNK|danemark|danois
+DJI|djibouti|djiboutien
+DMA|dominique|dominiquais
+EGY|egypte|egyptien
+ARE|emirats arabes unis|emirien,emirati
+ECU|equateur|equatorien
+ERI|erythree|erythreen
+ESP|espagne|espagnol
+EST|estonie|estonien
+SWZ|eswatini,swaziland|swazi
+USA|etats unis,usa,etats unis d amerique,us|americain
+ETH|ethiopie|ethiopien
+FJI|fidji|fidjien
+FIN|finlande|finlandais
+FRA|france|francais
+GAB|gabon|gabonais
+GMB|gambie|gambien
+GEO|georgie|georgien
+GHA|ghana|ghaneen
+GRC|grece|grec,grecq
+GRD|grenade|grenadien
+GTM|guatemala|guatemalteque
+GIN|guinee|guineen
+GNB|guinee bissau|bissau guineen
+GNQ|guinee equatoriale|equato guineen
+GUY|guyana|guyanien
+HTI|haiti|haitien
+HND|honduras|hondurien
+HUN|hongrie|hongrois
+MHL|iles marshall|marshallais
+SLB|iles salomon|salomonais
 IND|inde|indien
-PAK|pakistan|pakistanais
-LBN|liban|libanais
-ISR|israel|israelien
-SYR|syrie|syrien
+IDN|indonesie|indonesien
 IRQ|irak|irakien
 IRN|iran|iranien
-SAU|arabie saoudite|saoudien
-ARE|emirats arabes unis|emirien
-VNM|vietnam|vietnamien
-THA|thailande|thailandais
-AUS|australie|australien
+IRL|irlande|irlandais
+ISL|islande|islandais
+ISR|israel|israelien
+ITA|italie|italien
+JAM|jamaique|jamaicain
+JPN|japon|japonais
+JOR|jordanie|jordanien
+KAZ|kazakhstan|kazakh
+KEN|kenya|kenyan
+KGZ|kirghizistan|kirghize
+KIR|kiribati|kiribatien
+XKX|kosovo|kosovar
+KWT|koweit|koweitien
+LAO|laos|laotien
+LSO|lesotho|lesothan
+LVA|lettonie|letton
+LBN|liban|libanais
+LBR|liberia|liberien
+LBY|libye|libyen
+LIE|liechtenstein|liechtensteinois
+LTU|lituanie|lituanien
+LUX|luxembourg|luxembourgeois
+MKD|macedoine du nord,macedoine|macedonien
+MDG|madagascar|malgache
+MYS|malaisie|malaisien
+MWI|malawi|malawite
+MDV|maldives|maldivien
+MLI|mali|malien
+MLT|malte|maltais
+MAR|maroc|marocain
+MUS|maurice|mauricien
+MRT|mauritanie|mauritanien
+MEX|mexique|mexicain
+FSM|micronesie|micronesien
+MDA|moldavie|moldave
+MCO|monaco|monegasque
+MNG|mongolie|mongol
+MNE|montenegro|montenegrin
+MOZ|mozambique|mozambicain
+NAM|namibie|namibien
+NRU|nauru|nauruan
+NPL|nepal|nepalais
+NIC|nicaragua|nicaraguayen
+NER|niger|nigerien
 NGA|nigeria|nigerian
-ZAF|afrique du sud|sud africain`
+NOR|norvege|norvegien
+NZL|nouvelle zelande|neo zelandais
+OMN|oman|omanais
+UGA|ouganda|ougandais
+UZB|ouzbekistan|ouzbek
+PAK|pakistan|pakistanais
+PLW|palaos|palaosien
+PSE|palestine|palestinien
+PAN|panama|panameen
+PNG|papouasie nouvelle guinee|papou
+PRY|paraguay|paraguayen
+NLD|pays bas,hollande|neerlandais,hollandais
+PER|perou|peruvien
+PHL|philippines|philippin
+POL|pologne|polonais
+PRT|portugal|portugais
+QAT|qatar|qatarien
+CAF|republique centrafricaine,centrafrique|centrafricain
+DOM|republique dominicaine|dominicain
+CZE|tchequie,republique tcheque|tcheque
+ROU|roumanie|roumain
+GBR|royaume uni,angleterre,grande bretagne,ecosse,pays de galles|britannique,anglais,ecossais,gallois
+RUS|russie|russe
+RWA|rwanda|rwandais
+KNA|saint christophe et nieves|kittitien
+LCA|sainte lucie|saint lucien
+SMR|saint marin|saint marinais
+VCT|saint vincent et les grenadines|vincentais
+SLV|salvador,el salvador|salvadorien
+WSM|samoa|samoan
+STP|sao tome et principe|santomeen
+SEN|senegal|senegalais
+SRB|serbie|serbe
+SYC|seychelles|seychellois
+SLE|sierra leone|sierra leonais
+SGP|singapour|singapourien
+SVK|slovaquie|slovaque
+SVN|slovenie|slovene
+SOM|somalie|somalien
+SDN|soudan|soudanais
+SSD|soudan du sud|sud soudanais
+LKA|sri lanka|sri lankais
+SWE|suede|suedois
+CHE|suisse|suisse
+SUR|suriname|surinamien
+SYR|syrie|syrien
+TJK|tadjikistan|tadjik
+TWN|taiwan|taiwanais
+TZA|tanzanie|tanzanien
+TCD|tchad|tchadien
+THA|thailande|thailandais
+TLS|timor oriental|timorais
+TGO|togo|togolais
+TON|tonga|tongien
+TTO|trinite et tobago|trinidadien
+TUN|tunisie|tunisien
+TKM|turkmenistan|turkmene
+TUR|turquie|turc,turq
+TUV|tuvalu|tuvaluan
+UKR|ukraine|ukrainien
+URY|uruguay|uruguayen
+VUT|vanuatu|vanuatais
+VAT|vatican,saint siege|
+VEN|venezuela|venezuelien
+VNM|vietnam,viet nam|vietnamien
+YEM|yemen|yemenite
+ZMB|zambie|zambien
+ZWE|zimbabwe|zimbabween`
   .split('\n')
   .map((l) => {
     const [code, names, stems] = l.split('|');
@@ -263,6 +396,51 @@ const staffButtons = (uid, disabled = false) =>
     new ButtonBuilder().setCustomId(`id_refuse:${uid}`).setLabel('Refuser').setStyle(ButtonStyle.Danger).setDisabled(disabled),
   );
 
+// ───────── PANNEAU ─────────
+const getMeta = async (k) =>
+  (await db.execute({ sql: 'SELECT value FROM meta WHERE key = ?', args: [k] })).rows[0]?.value || null;
+const setMeta = (k, v) =>
+  db.execute({
+    sql: 'INSERT INTO meta (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    args: [k, v],
+  });
+
+async function sendPanel() {
+  const ch = await client.channels.fetch(CFG.PANEL_CHANNEL);
+  const oldId = await getMeta('panel_message_id');
+  if (oldId) {
+    const old = await ch.messages.fetch(oldId).catch(() => null);
+    if (old) await old.delete().catch(() => {});
+  }
+  const e = mkEmbed(0x3498db)
+    .setTitle('🪪 Création de ta carte d\'identité')
+    .setDescription(
+      'Clique sur le bouton ci-dessous pour faire ta demande d\'état civil.\n\n' +
+      'Ta demande sera vérifiée par le staff. Tu recevras un **MP** à chaque étape.',
+    );
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('id_open').setLabel('Créer mon identité').setEmoji('🪪').setStyle(ButtonStyle.Primary),
+  );
+  const msg = await ch.send({ embeds: [e], components: [row] });
+  await setMeta('panel_message_id', msg.id);
+  return msg;
+}
+
+async function ensurePanel() {
+  try {
+    const id = await getMeta('panel_message_id');
+    if (id) {
+      const ch = await client.channels.fetch(CFG.PANEL_CHANNEL);
+      if (await ch.messages.fetch(id).catch(() => null)) return;
+    }
+    await sendPanel();
+    await botLog('📌 Panneau publié', `Panneau d'identité envoyé dans <#${CFG.PANEL_CHANNEL}>.`);
+  } catch (e) {
+    console.error('ensurePanel', e.message);
+    await botLog('❌ Panneau impossible', `Impossible de publier le panneau : ${e.message}`, 0xed4245);
+  }
+}
+
 // ───────── COMMANDES ─────────
 const commands = [
   new SlashCommandBuilder()
@@ -282,17 +460,8 @@ async function onCommand(i) {
   );
 
   if (i.commandName === 'panneau-identite') {
-    const e = mkEmbed(0x3498db)
-      .setTitle('🪪 Création de ta carte d\'identité')
-      .setDescription(
-        'Clique sur le bouton ci-dessous pour remplir ta demande.\n\n' +
-        'Ta demande sera vérifiée par le staff. Tu recevras un **MP** à chaque étape.',
-      );
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('id_open').setLabel('Créer mon identité').setEmoji('🪪').setStyle(ButtonStyle.Primary),
-    );
-    await i.channel.send({ embeds: [e], components: [row] });
-    return i.reply({ content: '✅ Panneau envoyé.', flags: EPH });
+    await sendPanel();
+    return i.reply({ content: `✅ Panneau envoyé dans <#${CFG.PANEL_CHANNEL}>.`, flags: EPH });
   }
 
   if (i.commandName === 'carte') {
@@ -519,6 +688,7 @@ client.on(Events.InteractionCreate, async (i) => {
 client.once(Events.ClientReady, async () => {
   await initDb();
   await client.application.commands.set(commands);
+  await ensurePanel();
   console.log(`Connecté en tant que ${client.user.tag}`);
   await botLog('🟢 Bot démarré', `Connecté en tant que **${client.user.tag}**.`, 0x2ecc71);
 });
