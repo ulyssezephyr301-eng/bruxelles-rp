@@ -501,6 +501,87 @@ async function ensurePanel() {
   }
 }
 
+// ───────── CARTE D'IDENTITÉ RP (/personnage afficher) ─────────
+const mrzClean = (s) =>
+  s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]+/g, '<');
+
+function mrzLines(row) {
+  const [d, m, y] = row.naissance.split('/');
+  const l1 = ('IDBEL' + row.card_number.replace('-', '')).padEnd(30, '<');
+  const l2 = (`${y.slice(2)}${m}${d}<`).padEnd(15, '<') + row.pays_code;
+  const l3 = `${mrzClean(row.nom)}<<${mrzClean(row.prenom)}`;
+  return [l1, l2.padEnd(30, '<'), l3.padEnd(30, '<').slice(0, 30)];
+}
+
+const fmtDate = (iso, addYears = 0) => {
+  const d = new Date(iso);
+  d.setFullYear(d.getFullYear() + addYears);
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Brussels' });
+};
+
+// Photo = buste du personnage Roblox (retrouvé via le pseudo Discord)
+const robloxCache = new Map();
+
+async function getRobloxPhoto(member, user) {
+  const names = [...new Set(
+    [member?.nickname, user.username, member?.displayName, user.globalName]
+      .filter((n) => n && /^[A-Za-z0-9_]{3,20}$/.test(n)),
+  )];
+  if (!names.length) return null;
+
+  const key = names.join('|');
+  const hit = robloxCache.get(key);
+  if (hit && Date.now() - hit.at < 3600_000) return hit.url;
+
+  try {
+    const r = await fetch('https://users.roblox.com/v1/usernames/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernames: names, excludeBannedUsers: true }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const { data } = await r.json();
+    const found = names
+      .map((n) => data.find((d) => d.requestedUsername.toLowerCase() === n.toLowerCase()))
+      .find(Boolean);
+    if (!found) return null;
+
+    const t = await fetch(
+      `https://thumbnails.roblox.com/v1/users/avatar-bust?userIds=${found.id}&size=420x420&format=Png&isCircular=false`,
+      { signal: AbortSignal.timeout(5000) },
+    );
+    const td = (await t.json()).data?.[0];
+    const url = td?.state === 'Completed' ? td.imageUrl : null;
+    if (url) robloxCache.set(key, { url, at: Date.now() });
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function idCardEmbed(row, user, photoUrl) {
+  return mkEmbed(0x3b6ea5)
+    .setAuthor({ name: '🇧🇪 BRUXELLES ROLE-PLAY • CARTE D\'IDENTITÉ' })
+    .setTitle('🪪 IDENTITY CARD • CARTE D\'IDENTITÉ')
+    .setDescription(
+      `👤 **Titulaire :** <@${row.user_id}>\n` +
+      '🏛️ *Délivrée par l\'Administration communale de Bruxelles*',
+    )
+    .setThumbnail(photoUrl || user.displayAvatarURL({ size: 256 }))
+    .addFields(
+      { name: '📛 NOM / SURNAME', value: `**${row.nom}**`, inline: true },
+      { name: '🧑 PRÉNOM / GIVEN NAME', value: `**${row.prenom}**`, inline: true },
+      { name: '\u200b', value: '\u200b', inline: true },
+      { name: '🎂 NÉ(E) LE / DATE OF BIRTH', value: row.naissance, inline: true },
+      { name: '🏙️ LIEU DE NAISSANCE / PLACE OF BIRTH', value: row.ville, inline: true },
+      { name: '🌍 NATIONALITÉ / NATIONALITY', value: `${row.nationalite} (${row.pays_code})`, inline: true },
+      { name: '🔢 N° DE CARTE / CARD NO.', value: `\`${row.card_number}\``, inline: true },
+      { name: '📅 DÉLIVRÉE LE / ISSUED', value: fmtDate(row.reviewed_at), inline: true },
+      { name: '⏳ VALABLE JUSQU\'AU / EXPIRES', value: fmtDate(row.reviewed_at, 10), inline: true },
+      { name: '🔠 ZONE DE LECTURE AUTOMATIQUE', value: '```\n' + mrzLines(row).join('\n') + '\n```' },
+    );
+}
+
 // ───────── COMMANDES ─────────
 const commands = [
   new SlashCommandBuilder()
@@ -511,6 +592,13 @@ const commands = [
     .setName('carte')
     .setDescription('Affiche ta carte d\'identité')
     .addUserOption((o) => o.setName('membre').setDescription('(Staff) voir la carte d\'un membre')),
+  new SlashCommandBuilder()
+    .setName('personnage')
+    .setDescription('Commandes de ton personnage RP')
+    .addSubcommand((s) =>
+      s.setName('afficher')
+        .setDescription('Affiche la carte d\'identité d\'un personnage')
+        .addUserOption((o) => o.setName('membre').setDescription('Le membre (toi par défaut)'))),
 ].map((c) => c.toJSON());
 
 async function onCommand(i) {
@@ -533,13 +621,32 @@ async function onCommand(i) {
       return i.reply({ content: '❌ Aucune carte d\'identité validée.', flags: EPH });
     return i.reply({ embeds: [cardEmbed(row)], flags: EPH });
   }
+
+  if (i.commandName === 'personnage') {
+    if (i.options.getSubcommand() === 'afficher') {
+      const target = i.options.getUser('membre') || i.user;
+      const row = await getIdentity(target.id);
+      if (!row || row.status !== 'approved') {
+        return i.reply({
+          content: target.id === i.user.id
+            ? `❌ Tu n'as pas encore de carte d'identité. Fais ta demande dans <#${CFG.PANEL_CHANNEL}>.`
+            : `❌ <@${target.id}> n'a pas de carte d'identité validée.`,
+          flags: EPH,
+        });
+      }
+      await i.deferReply();
+      const member = await i.guild.members.fetch(target.id).catch(() => null);
+      const photo = await getRobloxPhoto(member, target);
+      return i.editReply({ embeds: [idCardEmbed(row, target, photo)] });
+    }
+  }
 }
 
 // ───────── CRÉATION D'IDENTITÉ ─────────
 async function onOpen(i) {
   const row = await getIdentity(i.user.id);
   if (row?.status === 'approved')
-    return i.reply({ content: '✅ Tu as déjà une carte d\'identité (`/carte`).', flags: EPH });
+    return i.reply({ content: '✅ Tu as déjà une carte d\'identité (`/personnage afficher`).', flags: EPH });
   if (row?.status === 'pending')
     return i.reply({ content: '⏳ Ta demande est déjà en cours de vérification.', flags: EPH });
 
