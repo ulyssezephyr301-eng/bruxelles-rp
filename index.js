@@ -278,13 +278,47 @@ function findCountry(input) {
   return COUNTRIES.find((c) => c.names.includes(n) || c.stems.some((s) => n.startsWith(s))) || null;
 }
 
-// ───────── MODÉRATION (mots / dates suspects) ─────────
-const BAD_WORDS = [
-  'terroriste', 'terrorist', 'terrorisme', 'daech', 'daesh', 'isis', 'al qaida', 'alqaida', 'al qaeda',
-  'ben laden', 'oussama', 'hitler', 'adolf', 'nazi', 'goebbels', 'himmler', 'mussolini', 'staline',
-  'jihad', 'djihad', 'kamikaze', 'attentat', 'bombe', 'explosif', 'massacre', 'pedophile', 'pedo',
-  'violeur', 'viol', 'nique', 'salope', 'pute', 'connard', 'enculer', 'negro', 'nigger',
-].map(norm);
+// ───────── MODÉRATION RENFORCÉE (mots / dates suspects) ─────────
+// Nettoyage anti-contournement : accents, leet (4=a, 3=e, 1=i, 0=o...), symboles, lettres répétées
+const LEET = { 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', 8: 'b', '@': 'a', $: 's', '!': 'i', '€': 'e', '£': 'l', '+': 't' };
+function clean(s) {
+  let t = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  t = t.replace(/[0134578@$!€£+]/g, (c) => LEET[c]);
+  t = t.replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+  return t.replace(/(.)\1+/g, '$1'); // "hiiitler" -> "hitler"
+}
+
+const RAW_TERMS = [
+  // Terrorisme
+  'ben laden', 'bin laden', 'osama bin laden', 'oussama ben laden', 'al qaida', 'al qaeda', 'alqaida',
+  'zawahiri', 'zarqawi', 'al baghdadi', 'abou bakr al baghdadi', 'daech', 'daesh', 'isis', 'etat islamique',
+  'terroriste', 'terrorist', 'terrorisme', 'jihad', 'djihad', 'kamikaze', 'attentat', 'bombe', 'explosif',
+  'massacre', 'mohamed merah', 'amedy coulibaly', 'salah abdeslam', 'abdelhamid abaaoud',
+  'cherif kouachi', 'said kouachi', 'anders breivik',
+  // Dictateurs / nazisme
+  'hitler', 'adolf hitler', 'nazi', 'goebbels', 'himmler', 'eichmann', 'mengele', 'mussolini',
+  'staline', 'pol pot', 'kim jong un', 'auschwitz', 'treblinka',
+  // Criminels célèbres
+  'marc dutroux', 'michel fourniret',
+  // Violence / insultes
+  'pedophile', 'pedo', 'violeur', 'viol', 'tueur', 'assassin',
+  'nique', 'salope', 'pute', 'connard', 'enculer', 'negro',
+];
+const TERMS = RAW_TERMS.map((raw) => {
+  const c = clean(raw);
+  return { raw, spaced: c, tight: c.replace(/ /g, '') };
+});
+
+function matchTerm(text) {
+  const c = clean(text);
+  const padded = ` ${c} `;
+  const tight = c.replace(/ /g, '');
+  for (const t of TERMS) {
+    if (padded.includes(` ${t.spaced} `)) return t.raw;             // mot / expression entière
+    if (t.tight.length >= 6 && tight.includes(t.tight)) return t.raw; // "b e n l a d e n", "benladen"
+  }
+  return null;
+}
 
 const BAD_DATES = [
   { d: 11, m: 9, why: '11 septembre' },
@@ -292,20 +326,31 @@ const BAD_DATES = [
   { d: 13, m: 11, y: 2015, why: 'attentats du 13 novembre' },
   { d: 7, m: 1, y: 2015, why: 'attentat Charlie Hebdo' },
   { d: 14, m: 7, y: 2016, why: 'attentat de Nice' },
-  { d: 20, m: 4, why: 'date associée à Hitler' },
+  { d: 11, m: 3, y: 2004, why: 'attentats de Madrid' },
+  { d: 7, m: 7, y: 2005, why: 'attentats de Londres' },
+  { d: 22, m: 7, y: 2011, why: 'attentats d\'Oslo / Utøya' },
+  { d: 15, m: 3, y: 2019, why: 'attentat de Christchurch' },
+  { d: 20, m: 4, y: 1889, why: 'date de naissance d\'Hitler' },
 ];
-
-function badWord(text) {
-  const n = norm(text);
-  const padded = ` ${n} `;
-  return BAD_WORDS.find((w) => (w.length >= 6 ? n.includes(w) : padded.includes(` ${w} `))) || null;
-}
 
 function checkSuspicious({ nom, prenom, ville, nationalite }, date) {
   const flags = [];
-  for (const [label, val] of [['Nom', nom], ['Prénom', prenom], ['Ville de naissance', ville], ['Nationalité', nationalite]]) {
-    const w = badWord(val);
-    if (w) flags.push(`${label} : « ${val} » (terme suspect : ${w})`);
+  const seen = new Set();
+  const checks = [
+    ['name', 'Nom', nom],
+    ['name', 'Prénom', prenom],
+    ['name', 'Nom complet', `${prenom} ${nom}`],          // "Ben" + "Laden"
+    ['name', 'Nom complet (inversé)', `${nom} ${prenom}`],
+    ['ville', 'Ville de naissance', ville],
+    ['nat', 'Nationalité', nationalite],
+  ];
+  for (const [group, label, val] of checks) {
+    const term = matchTerm(val);
+    if (!term) continue;
+    const key = `${group}:${term}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    flags.push(`${label} : « ${val} » (terme suspect : ${term})`);
   }
   const bd = BAD_DATES.find((b) => b.d === date.d && b.m === date.mo && (!b.y || b.y === date.y));
   if (bd) flags.push(`Date de naissance : ${date.str} (${bd.why})`);
@@ -326,7 +371,7 @@ function parseDate(s) {
   return { d, mo, y, str: `${String(d).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${y}` };
 }
 
-const mkEmbed = (color = 0x5865f2) => new EmbedBuilder().setColor(color).setFooter({ text: FOOTER }).setTimestamp();
+const mkEmbed = (color = 0x3498db) => new EmbedBuilder().setColor(color).setFooter({ text: FOOTER }).setTimestamp();
 const isStaff = (i) => i.member?.roles?.cache?.some((r) => CFG.STAFF_ROLES.includes(r.id));
 const EPH = MessageFlags.Ephemeral;
 
@@ -356,31 +401,33 @@ async function dm(userId, embed) {
   }
 }
 
-function cardEmbed(row, color = 0x2ecc71) {
-  return mkEmbed(color)
+// ───────── EMBEDS ─────────
+function identityFields(row) {
+  return [
+    { name: '📛 Nom', value: row.nom, inline: true },
+    { name: '🧑 Prénom', value: row.prenom, inline: true },
+    { name: '🎂 Date de naissance', value: row.naissance, inline: true },
+    { name: '🏙️ Ville de naissance', value: row.ville, inline: true },
+    { name: '🌍 Nationalité', value: `${row.nationalite} (${row.pays_code})`, inline: true },
+  ];
+}
+
+function cardEmbed(row, intro) {
+  return mkEmbed(0x2ecc71)
     .setTitle('🪪 Carte d\'identité — Bruxelles Role-Play')
-    .addFields(
-      { name: 'N° de carte', value: `\`${row.card_number}\``, inline: false },
-      { name: 'Nom', value: row.nom, inline: true },
-      { name: 'Prénom', value: row.prenom, inline: true },
-      { name: 'Date de naissance', value: row.naissance, inline: true },
-      { name: 'Ville de naissance', value: row.ville, inline: true },
-      { name: 'Nationalité', value: `${row.nationalite} (${row.pays_code})`, inline: true },
-    );
+    .setDescription(`${intro ? intro + '\n\n' : ''}🔢 **N° de carte :** \`${row.card_number}\``)
+    .addFields(identityFields(row));
 }
 
 function requestEmbed(row, flags, userTag) {
   const susp = flags.length > 0;
   const e = mkEmbed(susp ? 0xe74c3c : 0xf1c40f)
     .setTitle(susp ? '🚨 Demande d\'identité — ÉLÉMENTS SUSPECTS' : '🪪 Nouvelle demande d\'identité')
-    .setDescription(`Demandeur : <@${row.user_id}> (${userTag})`)
-    .addFields(
-      { name: 'Nom', value: row.nom, inline: true },
-      { name: 'Prénom', value: row.prenom, inline: true },
-      { name: 'Date de naissance', value: row.naissance, inline: true },
-      { name: 'Ville de naissance', value: row.ville, inline: true },
-      { name: 'Nationalité', value: `${row.nationalite} (${row.pays_code})`, inline: true },
-    );
+    .setDescription(
+      `👤 **Demandeur :** <@${row.user_id}> (${userTag})\n🆔 **ID :** \`${row.user_id}\`` +
+      (susp ? '\n\n🚨 Le système a détecté des **éléments suspects**. Vérifie cette demande avec attention.' : ''),
+    )
+    .addFields(identityFields(row));
   if (susp) {
     e.addFields({
       name: '⚠️ Détections automatiques',
@@ -392,8 +439,8 @@ function requestEmbed(row, flags, userTag) {
 
 const staffButtons = (uid, disabled = false) =>
   new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`id_accept:${uid}`).setLabel('Valider').setStyle(ButtonStyle.Success).setDisabled(disabled),
-    new ButtonBuilder().setCustomId(`id_refuse:${uid}`).setLabel('Refuser').setStyle(ButtonStyle.Danger).setDisabled(disabled),
+    new ButtonBuilder().setCustomId(`id_accept:${uid}`).setLabel('Valider').setEmoji('✅').setStyle(ButtonStyle.Success).setDisabled(disabled),
+    new ButtonBuilder().setCustomId(`id_refuse:${uid}`).setLabel('Refuser').setEmoji('❌').setStyle(ButtonStyle.Danger).setDisabled(disabled),
   );
 
 // ───────── PANNEAU ─────────
@@ -405,6 +452,26 @@ const setMeta = (k, v) =>
     args: [k, v],
   });
 
+const panelPayload = () => ({
+  embeds: [
+    mkEmbed(0x3498db)
+      .setTitle('🪪 Création de ta carte d\'identité')
+      .setDescription(
+        'Pour jouer sur Bruxelles Role-Play, fais ta demande d\'état civil.\n\n' +
+        '1️⃣ Clique sur **Créer mon identité**.\n' +
+        '2️⃣ Remplis le formulaire : **nom, prénom, date de naissance, ville de naissance et nationalité**.\n' +
+        '3️⃣ Le staff vérifie ta demande et tu reçois la décision par **MP**.\n\n' +
+        '✅ Une fois validée, tu reçois ta **carte d\'identité** et ton rôle.\n' +
+        '⚠️ Les informations doivent être **réalistes** et respecter le règlement. Toute demande suspecte est signalée au staff.',
+      ),
+  ],
+  components: [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('id_open').setLabel('Créer mon identité').setEmoji('🪪').setStyle(ButtonStyle.Success),
+    ),
+  ],
+});
+
 async function sendPanel() {
   const ch = await client.channels.fetch(CFG.PANEL_CHANNEL);
   const oldId = await getMeta('panel_message_id');
@@ -412,16 +479,7 @@ async function sendPanel() {
     const old = await ch.messages.fetch(oldId).catch(() => null);
     if (old) await old.delete().catch(() => {});
   }
-  const e = mkEmbed(0x3498db)
-    .setTitle('🪪 Création de ta carte d\'identité')
-    .setDescription(
-      'Clique sur le bouton ci-dessous pour faire ta demande d\'état civil.\n\n' +
-      'Ta demande sera vérifiée par le staff. Tu recevras un **MP** à chaque étape.',
-    );
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('id_open').setLabel('Créer mon identité').setEmoji('🪪').setStyle(ButtonStyle.Primary),
-  );
-  const msg = await ch.send({ embeds: [e], components: [row] });
+  const msg = await ch.send(panelPayload());
   await setMeta('panel_message_id', msg.id);
   return msg;
 }
@@ -429,12 +487,14 @@ async function sendPanel() {
 async function ensurePanel() {
   try {
     const id = await getMeta('panel_message_id');
-    if (id) {
-      const ch = await client.channels.fetch(CFG.PANEL_CHANNEL);
-      if (await ch.messages.fetch(id).catch(() => null)) return;
+    const ch = await client.channels.fetch(CFG.PANEL_CHANNEL);
+    const existing = id ? await ch.messages.fetch(id).catch(() => null) : null;
+    if (existing) {
+      await existing.edit(panelPayload()); // met à jour le style du panneau existant
+      return;
     }
     await sendPanel();
-    await botLog('📌 Panneau publié', `Panneau d'identité envoyé dans <#${CFG.PANEL_CHANNEL}>.`);
+    await botLog('📌 Panneau publié', `Panneau d'identité envoyé dans <#${CFG.PANEL_CHANNEL}>.`, 0x3498db);
   } catch (e) {
     console.error('ensurePanel', e.message);
     await botLog('❌ Panneau impossible', `Impossible de publier le panneau : ${e.message}`, 0xed4245);
@@ -512,7 +572,7 @@ async function onSubmit(i) {
   if (!raw.ville || raw.ville.length < 2) errors.push('Ville de naissance invalide.');
   if (!country) errors.push('Nationalité non reconnue : écris le nom du pays (ex : France, Belgique, Maroc...).');
   if (errors.length)
-    return i.editReply({ content: '❌ Ta demande n\'a pas pu être envoyée :\n' + errors.map((e) => `• ${e}`).join('\n') + '\n\nReclique sur le bouton pour recommencer.' });
+    return i.editReply({ content: '❌ Ta demande n\'a pas pu être envoyée :\n' + errors.map((e) => `• ${e}`).join('\n') + '\n\n🔁 Reclique sur le bouton pour recommencer.' });
 
   const existing = await getIdentity(i.user.id);
   if (existing && existing.status !== 'refused')
@@ -555,14 +615,14 @@ async function onSubmit(i) {
 
   await dm(i.user.id, mkEmbed(0xf1c40f)
     .setTitle('⏳ Demande prise en compte')
-    .setDescription('Ta demande de carte d\'identité a bien été reçue. Le staff va la vérifier, tu recevras un MP avec la décision.')
-    .addFields(
-      { name: 'Nom', value: row.nom, inline: true },
-      { name: 'Prénom', value: row.prenom, inline: true },
-      { name: 'Date de naissance', value: row.naissance, inline: true },
-      { name: 'Ville de naissance', value: row.ville, inline: true },
-      { name: 'Nationalité', value: row.nationalite, inline: true },
-    ));
+    .setDescription(
+      'Ta demande de carte d\'identité a bien été reçue !\n\n' +
+      '1️⃣ Le staff vérifie tes informations.\n' +
+      '2️⃣ Tu reçois la décision par **MP**.\n' +
+      '3️⃣ Si elle est validée, tu reçois ta **carte** et ton rôle.\n\n' +
+      '📋 Voici le récapitulatif de ta demande :',
+    )
+    .addFields(identityFields(row)));
 
   return i.editReply({ content: msg ? '✅ Demande envoyée ! Tu as reçu un MP de confirmation.' : '⚠️ Demande enregistrée mais le salon staff est inaccessible, préviens un administrateur.' });
 }
@@ -593,7 +653,10 @@ async function onAccept(i, uid) {
     await botLog('❌ Erreur rôles', `Impossible de modifier les rôles de <@${uid}> : ${e.message}`, 0xed4245);
   }
 
-  const dmOk = await dm(uid, cardEmbed(done).setDescription('✅ Ta demande a été **validée** par le staff. Voici ta carte d\'identité !'));
+  const dmOk = await dm(uid, cardEmbed(
+    done,
+    '✅ Ta demande a été **validée** par le staff !\n🎉 Voici ta carte d\'identité, ton rôle a été mis à jour.',
+  ).setTitle('✅ Identité validée — Bruxelles Role-Play'));
 
   await i.editReply({
     embeds: [requestEmbed(done, JSON.parse(done.flags || '[]'), `<@${uid}>`)
@@ -602,13 +665,13 @@ async function onAccept(i, uid) {
   });
 
   await cardLog(mkEmbed(0x2ecc71).setTitle('✅ Carte validée').addFields(
-    { name: 'Membre', value: `<@${uid}>`, inline: true },
-    { name: 'Staff', value: `<@${i.user.id}>`, inline: true },
-    { name: 'N° carte', value: `\`${cardNumber}\``, inline: true },
-    { name: 'Identité', value: `${done.prenom} ${done.nom} • ${done.naissance} • ${done.ville} • ${done.nationalite} (${done.pays_code})` },
-    { name: 'Suspect', value: done.suspicious ? 'Oui ⚠️' : 'Non', inline: true },
-    { name: 'Rôles', value: roleOk ? 'Mis à jour' : 'Échec', inline: true },
-    { name: 'MP', value: dmOk ? 'Envoyé' : 'Échec', inline: true },
+    { name: '👤 Membre', value: `<@${uid}>`, inline: true },
+    { name: '🛡️ Staff', value: `<@${i.user.id}>`, inline: true },
+    { name: '🔢 N° carte', value: `\`${cardNumber}\``, inline: true },
+    { name: '🪪 Identité', value: `${done.prenom} ${done.nom} • ${done.naissance} • ${done.ville} • ${done.nationalite} (${done.pays_code})` },
+    { name: '🚨 Suspect', value: done.suspicious ? 'Oui ⚠️' : 'Non', inline: true },
+    { name: '🎭 Rôles', value: roleOk ? 'Mis à jour ✅' : 'Échec ❌', inline: true },
+    { name: '📩 MP', value: dmOk ? 'Envoyé ✅' : 'Échec ❌', inline: true },
   ));
 }
 
@@ -642,11 +705,14 @@ async function onRefuseSubmit(i, uid) {
 
   const dmOk = await dm(uid, mkEmbed(0xe74c3c)
     .setTitle('❌ Demande refusée')
-    .setDescription('Ta demande de carte d\'identité a été **refusée** par le staff.')
-    .addFields(
-      { name: 'Raison', value: reason },
-      { name: 'Et maintenant ?', value: 'Tu peux refaire une demande depuis le panneau de création d\'identité du serveur.' },
-    ));
+    .setDescription(
+      'Ta demande de carte d\'identité a été **refusée** par le staff.\n\n' +
+      '1️⃣ Lis la raison du refus ci-dessous.\n' +
+      '2️⃣ Corrige les informations concernées.\n' +
+      `3️⃣ Refais une demande depuis le panneau : <#${CFG.PANEL_CHANNEL}>.\n\n` +
+      '⚠️ Aucun rôle n\'a été modifié.',
+    )
+    .addFields({ name: '📝 Raison du refus', value: reason }));
 
   await i.editReply({
     embeds: [requestEmbed(row, JSON.parse(row.flags || '[]'), `<@${uid}>`)
@@ -655,12 +721,12 @@ async function onRefuseSubmit(i, uid) {
   });
 
   await cardLog(mkEmbed(0xe74c3c).setTitle('❌ Carte refusée').addFields(
-    { name: 'Membre', value: `<@${uid}>`, inline: true },
-    { name: 'Staff', value: `<@${i.user.id}>`, inline: true },
-    { name: 'Identité', value: `${row.prenom} ${row.nom} • ${row.naissance} • ${row.ville} • ${row.nationalite} (${row.pays_code})` },
-    { name: 'Raison', value: reason },
-    { name: 'Suspect', value: row.suspicious ? 'Oui ⚠️' : 'Non', inline: true },
-    { name: 'MP', value: dmOk ? 'Envoyé' : 'Échec', inline: true },
+    { name: '👤 Membre', value: `<@${uid}>`, inline: true },
+    { name: '🛡️ Staff', value: `<@${i.user.id}>`, inline: true },
+    { name: '🪪 Identité', value: `${row.prenom} ${row.nom} • ${row.naissance} • ${row.ville} • ${row.nationalite} (${row.pays_code})` },
+    { name: '📝 Raison', value: reason },
+    { name: '🚨 Suspect', value: row.suspicious ? 'Oui ⚠️' : 'Non', inline: true },
+    { name: '📩 MP', value: dmOk ? 'Envoyé ✅' : 'Échec ❌', inline: true },
   ));
 }
 
