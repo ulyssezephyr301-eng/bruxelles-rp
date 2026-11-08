@@ -30,6 +30,7 @@ const fontFile = (pkg, file) => path.join(__dirname, 'node_modules', '@fontsourc
   [fontFile('inter', 'inter-latin-400-normal.woff'), 'CardRegular'],
   [fontFile('inter', 'inter-latin-700-normal.woff'), 'CardBold'],
   [fontFile('ibm-plex-mono', 'ibm-plex-mono-latin-500-normal.woff'), 'CardMono'],
+  [fontFile('great-vibes', 'great-vibes-latin-400-normal.woff'), 'CardSign'],
 ].forEach(([p, name]) => {
   try {
     if (!GlobalFonts.registerFromPath(p, name)) console.error('Police non chargée :', name);
@@ -59,6 +60,7 @@ async function initDb() {
     reviewed_at TEXT
   )`);
   await db.execute('ALTER TABLE identities ADD COLUMN roblox_id TEXT').catch(() => {}); // déjà présente ? ok
+  await db.execute('ALTER TABLE identities ADD COLUMN sexe TEXT').catch(() => {});      // déjà présente ? ok
   await db.execute(`CREATE TABLE IF NOT EXISTS identity_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT, action TEXT, staff_id TEXT, reason TEXT, at TEXT
@@ -85,209 +87,209 @@ async function genCardNumber() {
   }
 }
 
-// ───────── PAYS → CODE 3 LETTRES + ADJECTIF DE NATIONALITÉ ─────────
-// CODE|noms de pays (sans accents)|débuts de nationalité (sans accents)|adjectif féminin affiché
-const COUNTRIES = `AFG|afghanistan|afghan|Afghane
-ZAF|afrique du sud|sud africain|Sud-africaine
-ALB|albanie|albanais|Albanaise
-DZA|algerie|algerien|Algérienne
-DEU|allemagne|allemand|Allemande
-AND|andorre|andorran|Andorrane
-AGO|angola|angolais|Angolaise
-ATG|antigua et barbuda|antiguayen|Antiguayenne
-SAU|arabie saoudite|saoudien|Saoudienne
-ARG|argentine|argentin|Argentine
-ARM|armenie|armenien|Arménienne
-AUS|australie|australien|Australienne
-AUT|autriche|autrichien|Autrichienne
-AZE|azerbaidjan|azerbaidjanais,azeri|Azerbaïdjanaise
-BHS|bahamas|bahameen|Bahaméenne
-BHR|bahrein|bahreini|Bahreïnienne
-BGD|bangladesh|bangladais|Bangladaise
-BRB|barbade|barbadien|Barbadienne
-BEL|belgique|belge|Belge
-BLZ|belize|belizien|Bélizienne
-BEN|benin|beninois|Béninoise
-BTN|bhoutan|bhoutanais|Bhoutanaise
-BLR|bielorussie,belarus|bielorusse|Biélorusse
-MMR|birmanie,myanmar|birman|Birmane
-BOL|bolivie|bolivien|Bolivienne
-BIH|bosnie herzegovine,bosnie|bosnien|Bosnienne
-BWA|botswana|botswanais|Botswanaise
-BRA|bresil|bresilien|Brésilienne
-BRN|brunei|bruneien|Brunéienne
-BGR|bulgarie|bulgare|Bulgare
-BFA|burkina faso|burkinabe|Burkinabée
-BDI|burundi|burundais|Burundaise
-KHM|cambodge|cambodgien|Cambodgienne
-CMR|cameroun|camerounais|Camerounaise
-CAN|canada|canadien|Canadienne
-CPV|cap vert|cap verdien|Cap-verdienne
-CHL|chili|chilien|Chilienne
-CHN|chine|chinois|Chinoise
-CYP|chypre|chypriote|Chypriote
-COL|colombie|colombien|Colombienne
-COM|comores|comorien|Comorienne
-COG|congo,republique du congo,congo brazzaville||Congolaise
-COD|rd congo,republique democratique du congo,congo kinshasa||Congolaise (RDC)
-PRK|coree du nord|nord coreen|Nord-coréenne
-KOR|coree du sud,coree|sud coreen,coreen|Sud-coréenne
-CRI|costa rica|costaricien,costa ricien|Costaricienne
-CIV|cote d ivoire|ivoirien|Ivoirienne
-HRV|croatie|croate|Croate
-CUB|cuba|cubain|Cubaine
-DNK|danemark|danois|Danoise
-DJI|djibouti|djiboutien|Djiboutienne
-DMA|dominique|dominiquais|Dominiquaise
-EGY|egypte|egyptien|Égyptienne
-ARE|emirats arabes unis|emirien,emirati|Émiratie
-ECU|equateur|equatorien|Équatorienne
-ERI|erythree|erythreen|Érythréenne
-ESP|espagne|espagnol|Espagnole
-EST|estonie|estonien|Estonienne
-SWZ|eswatini,swaziland|swazi|Swazie
-USA|etats unis,usa,etats unis d amerique,us|americain|Américaine
-ETH|ethiopie|ethiopien|Éthiopienne
-FJI|fidji|fidjien|Fidjienne
-FIN|finlande|finlandais|Finlandaise
-FRA|france|francais|Française
-GAB|gabon|gabonais|Gabonaise
-GMB|gambie|gambien|Gambienne
-GEO|georgie|georgien|Géorgienne
-GHA|ghana|ghaneen|Ghanéenne
-GRC|grece|grec,grecq|Grecque
-GRD|grenade|grenadien|Grenadienne
-GTM|guatemala|guatemalteque|Guatémaltèque
-GIN|guinee|guineen|Guinéenne
-GNB|guinee bissau|bissau guineen|Bissau-guinéenne
-GNQ|guinee equatoriale|equato guineen|Équato-guinéenne
-GUY|guyana|guyanien|Guyanienne
-HTI|haiti|haitien|Haïtienne
-HND|honduras|hondurien|Hondurienne
-HUN|hongrie|hongrois|Hongroise
-MHL|iles marshall|marshallais|Marshallaise
-SLB|iles salomon|salomonais|Salomonaise
-IND|inde|indien|Indienne
-IDN|indonesie|indonesien|Indonésienne
-IRQ|irak|irakien|Irakienne
-IRN|iran|iranien|Iranienne
-IRL|irlande|irlandais|Irlandaise
-ISL|islande|islandais|Islandaise
-ISR|israel|israelien|Israélienne
-ITA|italie|italien|Italienne
-JAM|jamaique|jamaicain|Jamaïcaine
-JPN|japon|japonais|Japonaise
-JOR|jordanie|jordanien|Jordanienne
-KAZ|kazakhstan|kazakh|Kazakhe
-KEN|kenya|kenyan|Kényane
-KGZ|kirghizistan|kirghize|Kirghize
-KIR|kiribati|kiribatien|Kiribatienne
-XKX|kosovo|kosovar|Kosovare
-KWT|koweit|koweitien|Koweïtienne
-LAO|laos|laotien|Laotienne
-LSO|lesotho|lesothan|Lesothane
-LVA|lettonie|letton|Lettone
-LBN|liban|libanais|Libanaise
-LBR|liberia|liberien|Libérienne
-LBY|libye|libyen|Libyenne
-LIE|liechtenstein|liechtensteinois|Liechtensteinoise
-LTU|lituanie|lituanien|Lituanienne
-LUX|luxembourg|luxembourgeois|Luxembourgeoise
-MKD|macedoine du nord,macedoine|macedonien|Macédonienne
-MDG|madagascar|malgache|Malgache
-MYS|malaisie|malaisien|Malaisienne
-MWI|malawi|malawite|Malawite
-MDV|maldives|maldivien|Maldivienne
-MLI|mali|malien|Malienne
-MLT|malte|maltais|Maltaise
-MAR|maroc|marocain|Marocaine
-MUS|maurice|mauricien|Mauricienne
-MRT|mauritanie|mauritanien|Mauritanienne
-MEX|mexique|mexicain|Mexicaine
-FSM|micronesie|micronesien|Micronésienne
-MDA|moldavie|moldave|Moldave
-MCO|monaco|monegasque|Monégasque
-MNG|mongolie|mongol|Mongole
-MNE|montenegro|montenegrin|Monténégrine
-MOZ|mozambique|mozambicain|Mozambicaine
-NAM|namibie|namibien|Namibienne
-NRU|nauru|nauruan|Nauruane
-NPL|nepal|nepalais|Népalaise
-NIC|nicaragua|nicaraguayen|Nicaraguayenne
-NER|niger|nigerien|Nigérienne
-NGA|nigeria|nigerian|Nigériane
-NOR|norvege|norvegien|Norvégienne
-NZL|nouvelle zelande|neo zelandais|Néo-zélandaise
-OMN|oman|omanais|Omanaise
-UGA|ouganda|ougandais|Ougandaise
-UZB|ouzbekistan|ouzbek|Ouzbèke
-PAK|pakistan|pakistanais|Pakistanaise
-PLW|palaos|palaosien|Palaosienne
-PSE|palestine|palestinien|Palestinienne
-PAN|panama|panameen|Panaméenne
-PNG|papouasie nouvelle guinee|papou|Papouane
-PRY|paraguay|paraguayen|Paraguayenne
-NLD|pays bas,hollande|neerlandais,hollandais|Néerlandaise
-PER|perou|peruvien|Péruvienne
-PHL|philippines|philippin|Philippine
-POL|pologne|polonais|Polonaise
-PRT|portugal|portugais|Portugaise
-QAT|qatar|qatarien|Qatarienne
-CAF|republique centrafricaine,centrafrique|centrafricain|Centrafricaine
-DOM|republique dominicaine|dominicain|Dominicaine
-CZE|tchequie,republique tcheque|tcheque|Tchèque
-ROU|roumanie|roumain|Roumaine
-GBR|royaume uni,angleterre,grande bretagne,ecosse,pays de galles|britannique,anglais,ecossais,gallois|Britannique
-RUS|russie|russe|Russe
-RWA|rwanda|rwandais|Rwandaise
-KNA|saint christophe et nieves|kittitien|Kittitienne
-LCA|sainte lucie|saint lucien|Saint-lucienne
-SMR|saint marin|saint marinais|Saint-marinaise
-VCT|saint vincent et les grenadines|vincentais|Vincentaise
-SLV|salvador,el salvador|salvadorien|Salvadorienne
-WSM|samoa|samoan|Samoane
-STP|sao tome et principe|santomeen|Santoméenne
-SEN|senegal|senegalais|Sénégalaise
-SRB|serbie|serbe|Serbe
-SYC|seychelles|seychellois|Seychelloise
-SLE|sierra leone|sierra leonais|Sierra-léonaise
-SGP|singapour|singapourien|Singapourienne
-SVK|slovaquie|slovaque|Slovaque
-SVN|slovenie|slovene|Slovène
-SOM|somalie|somalien|Somalienne
-SDN|soudan|soudanais|Soudanaise
-SSD|soudan du sud|sud soudanais|Sud-soudanaise
-LKA|sri lanka|sri lankais|Sri-lankaise
-SWE|suede|suedois|Suédoise
-CHE|suisse|suisse|Suisse
-SUR|suriname|surinamien|Surinamienne
-SYR|syrie|syrien|Syrienne
-TJK|tadjikistan|tadjik|Tadjike
-TWN|taiwan|taiwanais|Taïwanaise
-TZA|tanzanie|tanzanien|Tanzanienne
-TCD|tchad|tchadien|Tchadienne
-THA|thailande|thailandais|Thaïlandaise
-TLS|timor oriental|timorais|Timoraise
-TGO|togo|togolais|Togolaise
-TON|tonga|tongien|Tongienne
-TTO|trinite et tobago|trinidadien|Trinidadienne
-TUN|tunisie|tunisien|Tunisienne
-TKM|turkmenistan|turkmene|Turkmène
-TUR|turquie|turc,turq|Turque
-TUV|tuvalu|tuvaluan|Tuvaluane
-UKR|ukraine|ukrainien|Ukrainienne
-URY|uruguay|uruguayen|Uruguayenne
-VUT|vanuatu|vanuatais|Vanuatuane
-VAT|vatican,saint siege||Vaticane
-VEN|venezuela|venezuelien|Vénézuélienne
-VNM|vietnam,viet nam|vietnamien|Vietnamienne
-YEM|yemen|yemenite|Yéménite
-ZMB|zambie|zambien|Zambienne
-ZWE|zimbabwe|zimbabween|Zimbabwéenne`
+// ───────── PAYS : code, nationalité, drapeau, nom officiel ─────────
+// CODE|noms de pays (sans accents)|débuts de nationalité (sans accents)|adjectif féminin|code ISO2 (drapeau)|nom officiel
+const COUNTRIES = `AFG|afghanistan|afghan|Afghane|af|Afghanistan
+ZAF|afrique du sud|sud africain|Sud-africaine|za|République sud-africaine
+ALB|albanie|albanais|Albanaise|al|République d'Albanie
+DZA|algerie|algerien|Algérienne|dz|République algérienne
+DEU|allemagne|allemand|Allemande|de|République fédérale d'Allemagne
+AND|andorre|andorran|Andorrane|ad|Principauté d'Andorre
+AGO|angola|angolais|Angolaise|ao|République d'Angola
+ATG|antigua et barbuda|antiguayen|Antiguayenne|ag|Antigua-et-Barbuda
+SAU|arabie saoudite|saoudien|Saoudienne|sa|Royaume d'Arabie saoudite
+ARG|argentine|argentin|Argentine|ar|République argentine
+ARM|armenie|armenien|Arménienne|am|République d'Arménie
+AUS|australie|australien|Australienne|au|Australie
+AUT|autriche|autrichien|Autrichienne|at|République d'Autriche
+AZE|azerbaidjan|azerbaidjanais,azeri|Azerbaïdjanaise|az|République d'Azerbaïdjan
+BHS|bahamas|bahameen|Bahaméenne|bs|Commonwealth des Bahamas
+BHR|bahrein|bahreini|Bahreïnienne|bh|Royaume de Bahreïn
+BGD|bangladesh|bangladais|Bangladaise|bd|République populaire du Bangladesh
+BRB|barbade|barbadien|Barbadienne|bb|Barbade
+BEL|belgique|belge|Belge|be|Royaume de Belgique
+BLZ|belize|belizien|Bélizienne|bz|Belize
+BEN|benin|beninois|Béninoise|bj|République du Bénin
+BTN|bhoutan|bhoutanais|Bhoutanaise|bt|Royaume du Bhoutan
+BLR|bielorussie,belarus|bielorusse|Biélorusse|by|République de Biélorussie
+MMR|birmanie,myanmar|birman|Birmane|mm|Myanmar
+BOL|bolivie|bolivien|Bolivienne|bo|État plurinational de Bolivie
+BIH|bosnie herzegovine,bosnie|bosnien|Bosnienne|ba|Bosnie-Herzégovine
+BWA|botswana|botswanais|Botswanaise|bw|République du Botswana
+BRA|bresil|bresilien|Brésilienne|br|République fédérative du Brésil
+BRN|brunei|bruneien|Brunéienne|bn|Brunéi Darussalam
+BGR|bulgarie|bulgare|Bulgare|bg|République de Bulgarie
+BFA|burkina faso|burkinabe|Burkinabée|bf|Burkina Faso
+BDI|burundi|burundais|Burundaise|bi|République du Burundi
+KHM|cambodge|cambodgien|Cambodgienne|kh|Royaume du Cambodge
+CMR|cameroun|camerounais|Camerounaise|cm|République du Cameroun
+CAN|canada|canadien|Canadienne|ca|Canada
+CPV|cap vert|cap verdien|Cap-verdienne|cv|République du Cap-Vert
+CHL|chili|chilien|Chilienne|cl|République du Chili
+CHN|chine|chinois|Chinoise|cn|République populaire de Chine
+CYP|chypre|chypriote|Chypriote|cy|République de Chypre
+COL|colombie|colombien|Colombienne|co|République de Colombie
+COM|comores|comorien|Comorienne|km|Union des Comores
+COG|congo,republique du congo,congo brazzaville||Congolaise|cg|République du Congo
+COD|rd congo,republique democratique du congo,congo kinshasa||Congolaise (RDC)|cd|République démocratique du Congo
+PRK|coree du nord|nord coreen|Nord-coréenne|kp|République populaire démocratique de Corée
+KOR|coree du sud,coree|sud coreen,coreen|Sud-coréenne|kr|République de Corée
+CRI|costa rica|costaricien,costa ricien|Costaricienne|cr|République du Costa Rica
+CIV|cote d ivoire|ivoirien|Ivoirienne|ci|République de Côte d'Ivoire
+HRV|croatie|croate|Croate|hr|République de Croatie
+CUB|cuba|cubain|Cubaine|cu|République de Cuba
+DNK|danemark|danois|Danoise|dk|Royaume du Danemark
+DJI|djibouti|djiboutien|Djiboutienne|dj|République de Djibouti
+DMA|dominique|dominiquais|Dominiquaise|dm|Commonwealth de la Dominique
+EGY|egypte|egyptien|Égyptienne|eg|République arabe d'Égypte
+ARE|emirats arabes unis|emirien,emirati|Émiratie|ae|Émirats arabes unis
+ECU|equateur|equatorien|Équatorienne|ec|République de l'Équateur
+ERI|erythree|erythreen|Érythréenne|er|État d'Érythrée
+ESP|espagne|espagnol|Espagnole|es|Royaume d'Espagne
+EST|estonie|estonien|Estonienne|ee|République d'Estonie
+SWZ|eswatini,swaziland|swazi|Swazie|sz|Royaume d'Eswatini
+USA|etats unis,usa,etats unis d amerique,us|americain|Américaine|us|États-Unis d'Amérique
+ETH|ethiopie|ethiopien|Éthiopienne|et|République d'Éthiopie
+FJI|fidji|fidjien|Fidjienne|fj|République des Fidji
+FIN|finlande|finlandais|Finlandaise|fi|République de Finlande
+FRA|france|francais|Française|fr|République française
+GAB|gabon|gabonais|Gabonaise|ga|République gabonaise
+GMB|gambie|gambien|Gambienne|gm|République de Gambie
+GEO|georgie|georgien|Géorgienne|ge|Géorgie
+GHA|ghana|ghaneen|Ghanéenne|gh|République du Ghana
+GRC|grece|grec,grecq|Grecque|gr|République hellénique
+GRD|grenade|grenadien|Grenadienne|gd|Grenade
+GTM|guatemala|guatemalteque|Guatémaltèque|gt|République du Guatemala
+GIN|guinee|guineen|Guinéenne|gn|République de Guinée
+GNB|guinee bissau|bissau guineen|Bissau-guinéenne|gw|République de Guinée-Bissau
+GNQ|guinee equatoriale|equato guineen|Équato-guinéenne|gq|République de Guinée équatoriale
+GUY|guyana|guyanien|Guyanienne|gy|République coopérative du Guyana
+HTI|haiti|haitien|Haïtienne|ht|République d'Haïti
+HND|honduras|hondurien|Hondurienne|hn|République du Honduras
+HUN|hongrie|hongrois|Hongroise|hu|Hongrie
+MHL|iles marshall|marshallais|Marshallaise|mh|République des Îles Marshall
+SLB|iles salomon|salomonais|Salomonaise|sb|Îles Salomon
+IND|inde|indien|Indienne|in|République de l'Inde
+IDN|indonesie|indonesien|Indonésienne|id|République d'Indonésie
+IRQ|irak|irakien|Irakienne|iq|République d'Irak
+IRN|iran|iranien|Iranienne|ir|République islamique d'Iran
+IRL|irlande|irlandais|Irlandaise|ie|Irlande
+ISL|islande|islandais|Islandaise|is|République d'Islande
+ISR|israel|israelien|Israélienne|il|État d'Israël
+ITA|italie|italien|Italienne|it|République italienne
+JAM|jamaique|jamaicain|Jamaïcaine|jm|Jamaïque
+JPN|japon|japonais|Japonaise|jp|Japon
+JOR|jordanie|jordanien|Jordanienne|jo|Royaume hachémite de Jordanie
+KAZ|kazakhstan|kazakh|Kazakhe|kz|République du Kazakhstan
+KEN|kenya|kenyan|Kényane|ke|République du Kenya
+KGZ|kirghizistan|kirghize|Kirghize|kg|République kirghize
+KIR|kiribati|kiribatien|Kiribatienne|ki|République de Kiribati
+XKX|kosovo|kosovar|Kosovare|xk|République du Kosovo
+KWT|koweit|koweitien|Koweïtienne|kw|État du Koweït
+LAO|laos|laotien|Laotienne|la|République démocratique populaire lao
+LSO|lesotho|lesothan|Lesothane|ls|Royaume du Lesotho
+LVA|lettonie|letton|Lettone|lv|République de Lettonie
+LBN|liban|libanais|Libanaise|lb|République libanaise
+LBR|liberia|liberien|Libérienne|lr|République du Libéria
+LBY|libye|libyen|Libyenne|ly|État de Libye
+LIE|liechtenstein|liechtensteinois|Liechtensteinoise|li|Principauté de Liechtenstein
+LTU|lituanie|lituanien|Lituanienne|lt|République de Lituanie
+LUX|luxembourg|luxembourgeois|Luxembourgeoise|lu|Grand-Duché de Luxembourg
+MKD|macedoine du nord,macedoine|macedonien|Macédonienne|mk|République de Macédoine du Nord
+MDG|madagascar|malgache|Malgache|mg|République de Madagascar
+MYS|malaisie|malaisien|Malaisienne|my|Malaisie
+MWI|malawi|malawite|Malawite|mw|République du Malawi
+MDV|maldives|maldivien|Maldivienne|mv|République des Maldives
+MLI|mali|malien|Malienne|ml|République du Mali
+MLT|malte|maltais|Maltaise|mt|République de Malte
+MAR|maroc|marocain|Marocaine|ma|Royaume du Maroc
+MUS|maurice|mauricien|Mauricienne|mu|République de Maurice
+MRT|mauritanie|mauritanien|Mauritanienne|mr|République islamique de Mauritanie
+MEX|mexique|mexicain|Mexicaine|mx|États-Unis mexicains
+FSM|micronesie|micronesien|Micronésienne|fm|États fédérés de Micronésie
+MDA|moldavie|moldave|Moldave|md|République de Moldavie
+MCO|monaco|monegasque|Monégasque|mc|Principauté de Monaco
+MNG|mongolie|mongol|Mongole|mn|Mongolie
+MNE|montenegro|montenegrin|Monténégrine|me|Monténégro
+MOZ|mozambique|mozambicain|Mozambicaine|mz|République du Mozambique
+NAM|namibie|namibien|Namibienne|na|République de Namibie
+NRU|nauru|nauruan|Nauruane|nr|République de Nauru
+NPL|nepal|nepalais|Népalaise|np|République du Népal
+NIC|nicaragua|nicaraguayen|Nicaraguayenne|ni|République du Nicaragua
+NER|niger|nigerien|Nigérienne|ne|République du Niger
+NGA|nigeria|nigerian|Nigériane|ng|République fédérale du Nigéria
+NOR|norvege|norvegien|Norvégienne|no|Royaume de Norvège
+NZL|nouvelle zelande|neo zelandais|Néo-zélandaise|nz|Nouvelle-Zélande
+OMN|oman|omanais|Omanaise|om|Sultanat d'Oman
+UGA|ouganda|ougandais|Ougandaise|ug|République de l'Ouganda
+UZB|ouzbekistan|ouzbek|Ouzbèke|uz|République d'Ouzbékistan
+PAK|pakistan|pakistanais|Pakistanaise|pk|République islamique du Pakistan
+PLW|palaos|palaosien|Palaosienne|pw|République des Palaos
+PSE|palestine|palestinien|Palestinienne|ps|État de Palestine
+PAN|panama|panameen|Panaméenne|pa|République du Panama
+PNG|papouasie nouvelle guinee|papou|Papouane|pg|Papouasie-Nouvelle-Guinée
+PRY|paraguay|paraguayen|Paraguayenne|py|République du Paraguay
+NLD|pays bas,hollande|neerlandais,hollandais|Néerlandaise|nl|Royaume des Pays-Bas
+PER|perou|peruvien|Péruvienne|pe|République du Pérou
+PHL|philippines|philippin|Philippine|ph|République des Philippines
+POL|pologne|polonais|Polonaise|pl|République de Pologne
+PRT|portugal|portugais|Portugaise|pt|République portugaise
+QAT|qatar|qatarien|Qatarienne|qa|État du Qatar
+CAF|republique centrafricaine,centrafrique|centrafricain|Centrafricaine|cf|République centrafricaine
+DOM|republique dominicaine|dominicain|Dominicaine|do|République dominicaine
+CZE|tchequie,republique tcheque|tcheque|Tchèque|cz|République tchèque
+ROU|roumanie|roumain|Roumaine|ro|Roumanie
+GBR|royaume uni,angleterre,grande bretagne,ecosse,pays de galles|britannique,anglais,ecossais,gallois|Britannique|gb|Royaume-Uni
+RUS|russie|russe|Russe|ru|Fédération de Russie
+RWA|rwanda|rwandais|Rwandaise|rw|République du Rwanda
+KNA|saint christophe et nieves|kittitien|Kittitienne|kn|Saint-Christophe-et-Niévès
+LCA|sainte lucie|saint lucien|Saint-lucienne|lc|Sainte-Lucie
+SMR|saint marin|saint marinais|Saint-marinaise|sm|République de Saint-Marin
+VCT|saint vincent et les grenadines|vincentais|Vincentaise|vc|Saint-Vincent-et-les-Grenadines
+SLV|salvador,el salvador|salvadorien|Salvadorienne|sv|République du Salvador
+WSM|samoa|samoan|Samoane|ws|État indépendant du Samoa
+STP|sao tome et principe|santomeen|Santoméenne|st|République de Sao Tomé-et-Principe
+SEN|senegal|senegalais|Sénégalaise|sn|République du Sénégal
+SRB|serbie|serbe|Serbe|rs|République de Serbie
+SYC|seychelles|seychellois|Seychelloise|sc|République des Seychelles
+SLE|sierra leone|sierra leonais|Sierra-léonaise|sl|République de Sierra Leone
+SGP|singapour|singapourien|Singapourienne|sg|République de Singapour
+SVK|slovaquie|slovaque|Slovaque|sk|République slovaque
+SVN|slovenie|slovene|Slovène|si|République de Slovénie
+SOM|somalie|somalien|Somalienne|so|République fédérale de Somalie
+SDN|soudan|soudanais|Soudanaise|sd|République du Soudan
+SSD|soudan du sud|sud soudanais|Sud-soudanaise|ss|République du Soudan du Sud
+LKA|sri lanka|sri lankais|Sri-lankaise|lk|République de Sri Lanka
+SWE|suede|suedois|Suédoise|se|Royaume de Suède
+CHE|suisse|suisse|Suisse|ch|Confédération suisse
+SUR|suriname|surinamien|Surinamienne|sr|République du Suriname
+SYR|syrie|syrien|Syrienne|sy|République arabe syrienne
+TJK|tadjikistan|tadjik|Tadjike|tj|République du Tadjikistan
+TWN|taiwan|taiwanais|Taïwanaise|tw|Taïwan
+TZA|tanzanie|tanzanien|Tanzanienne|tz|République unie de Tanzanie
+TCD|tchad|tchadien|Tchadienne|td|République du Tchad
+THA|thailande|thailandais|Thaïlandaise|th|Royaume de Thaïlande
+TLS|timor oriental|timorais|Timoraise|tl|République démocratique du Timor oriental
+TGO|togo|togolais|Togolaise|tg|République togolaise
+TON|tonga|tongien|Tongienne|to|Royaume des Tonga
+TTO|trinite et tobago|trinidadien|Trinidadienne|tt|République de Trinité-et-Tobago
+TUN|tunisie|tunisien|Tunisienne|tn|République tunisienne
+TKM|turkmenistan|turkmene|Turkmène|tm|Turkménistan
+TUR|turquie|turc,turq|Turque|tr|République de Turquie
+TUV|tuvalu|tuvaluan|Tuvaluane|tv|Tuvalu
+UKR|ukraine|ukrainien|Ukrainienne|ua|Ukraine
+URY|uruguay|uruguayen|Uruguayenne|uy|République orientale de l'Uruguay
+VUT|vanuatu|vanuatais|Vanuatuane|vu|République de Vanuatu
+VAT|vatican,saint siege||Vaticane|va|État de la Cité du Vatican
+VEN|venezuela|venezuelien|Vénézuélienne|ve|République bolivarienne du Venezuela
+VNM|vietnam,viet nam|vietnamien|Vietnamienne|vn|République socialiste du Viêt Nam
+YEM|yemen|yemenite|Yéménite|ye|République du Yémen
+ZMB|zambie|zambien|Zambienne|zm|République de Zambie
+ZWE|zimbabwe|zimbabween|Zimbabwéenne|zw|République du Zimbabwe`
   .split('\n')
   .map((l) => {
-    const [code, names, stems, adj] = l.split('|');
-    return { code, names: names.split(','), stems: stems ? stems.split(',').filter(Boolean) : [], adj };
+    const [code, names, stems, adj, iso2, officiel] = l.split('|');
+    return { code, names: names.split(','), stems: stems ? stems.split(',').filter(Boolean) : [], adj, iso2, officiel };
   });
 
 const norm = (s) =>
@@ -298,7 +300,8 @@ function findCountry(input) {
   const n = norm(input);
   return COUNTRIES.find((c) => c.names.includes(n) || c.stems.some((s) => n.startsWith(s))) || null;
 }
-const natAdj = (row) => COUNTRIES.find((c) => c.code === row.pays_code)?.adj || row.nationalite;
+const countryOf = (row) => COUNTRIES.find((c) => c.code === row.pays_code) || null;
+const natAdj = (row) => countryOf(row)?.adj || row.nationalite;
 
 // ───────── MODÉRATION RENFORCÉE (mots / dates suspects) ─────────
 // Nettoyage anti-contournement : accents, leet (4=a, 3=e, 1=i, 0=o...), symboles, lettres répétées
@@ -424,36 +427,47 @@ async function dm(userId, embed, files = []) {
 }
 
 // ───────── EMBEDS ─────────
+const sexLabel = (s) => (s === 'M' ? 'Masculin' : s === 'F' ? 'Féminin' : '—');
+
+// Identité en 2 colonnes, sans surcharge
 function identityFields(row) {
   return [
-    { name: '📛 Nom', value: row.nom, inline: true },
-    { name: '🧑 Prénom', value: row.prenom, inline: true },
-    { name: '🎂 Date de naissance', value: row.naissance, inline: true },
-    { name: '🏙️ Ville de naissance', value: row.ville, inline: true },
-    { name: '🌍 Nationalité', value: `${row.nationalite} (${row.pays_code})`, inline: true },
+    {
+      name: '🧑 Identité',
+      value: `**Nom :** ${row.nom}\n**Prénom :** ${row.prenom}\n**Sexe :** ${sexLabel(row.sexe)}`,
+      inline: true,
+    },
+    {
+      name: '🎂 Naissance',
+      value: `**Né(e) le :** ${row.naissance}\n**Lieu :** ${row.ville}\n**Nationalité :** ${row.nationalite} (${row.pays_code})`,
+      inline: true,
+    },
   ];
 }
+
+const summary = (row) =>
+  `${row.prenom} ${row.nom} (${sexLabel(row.sexe)}) • ${row.naissance} • ${row.ville} • ${row.nationalite} (${row.pays_code})`;
 
 // Version texte (secours si l'image ne peut pas être générée)
 function cardEmbed(row, intro) {
   return mkEmbed(0x2ecc71)
-    .setTitle('🪪 Carte d\'identité — Bruxelles Role-Play')
+    .setTitle('🪪 Carte d’identité')
     .setDescription(`${intro ? intro + '\n\n' : ''}🔢 **N° de carte :** \`${row.card_number}\``)
     .addFields(identityFields(row));
 }
 
-function requestEmbed(row, flags, userTag) {
+function requestEmbed(row, flags) {
   const susp = flags.length > 0;
   const e = mkEmbed(susp ? 0xe74c3c : 0xf1c40f)
-    .setTitle(susp ? '🚨 Demande d\'identité — ÉLÉMENTS SUSPECTS' : '🪪 Nouvelle demande d\'identité')
+    .setTitle(susp ? '🚨 Demande d’identité — éléments suspects' : '🪪 Nouvelle demande d’identité')
     .setDescription(
-      `👤 **Demandeur :** <@${row.user_id}> (${userTag})\n🆔 **ID :** \`${row.user_id}\`` +
-      (susp ? '\n\n🚨 Le système a détecté des **éléments suspects**. Vérifie cette demande avec attention.' : ''),
+      `**Demandeur :** <@${row.user_id}>  •  \`${row.user_id}\`` +
+      (susp ? '\n⚠️ Des éléments suspects ont été détectés, vérifie avec attention.' : ''),
     )
     .addFields(identityFields(row));
   if (susp) {
     e.addFields({
-      name: '⚠️ Détections automatiques',
+      name: '⚠️ Détections',
       value: flags.map((f) => `• ${f}`).join('\n').slice(0, 1000),
     });
   }
@@ -482,7 +496,7 @@ const panelPayload = () => ({
       .setDescription(
         'Pour jouer sur Bruxelles Role-Play, fais ta demande d\'état civil.\n\n' +
         '1️⃣ Clique sur **Créer mon identité**.\n' +
-        '2️⃣ Remplis le formulaire : **nom, prénom, date de naissance, ville de naissance et nationalité**.\n' +
+        '2️⃣ Choisis le **sexe** de ton personnage, puis remplis le formulaire : **nom, prénom, date de naissance, ville de naissance et nationalité**.\n' +
         '3️⃣ Le staff vérifie ta demande et tu reçois la décision par **MP**.\n\n' +
         '✅ Une fois validée, tu reçois ta **carte d\'identité** et ton rôle.\n' +
         '⚠️ Les informations doivent être **réalistes** et respecter le règlement. Toute demande suspecte est signalée au staff.',
@@ -591,16 +605,33 @@ async function fetchImage(url) {
   return loadImage(Buffer.from(await r.arrayBuffer()));
 }
 
+// Drapeau du pays (image mise en cache)
+const flagCache = new Map();
+async function getFlag(iso2) {
+  if (flagCache.has(iso2)) return flagCache.get(iso2);
+  try {
+    const img = await fetchImage(`https://flagcdn.com/w320/${iso2}.png`);
+    flagCache.set(iso2, img);
+    return img;
+  } catch {
+    return null;
+  }
+}
+
 // ───────── IMAGE DE LA CARTE D'IDENTITÉ ─────────
 const mrzClean = (s) =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]+/g, '<');
 
 function mrzLines(row) {
   const [d, m, y] = row.naissance.split('/');
-  const l1 = ('IDBEL' + row.card_number.replace('-', '')).padEnd(30, '<');
-  const l2 = (`${y.slice(2)}${m}${d}<`).padEnd(15, '<') + row.pays_code;
+  const exp = new Date(row.reviewed_at);
+  exp.setFullYear(exp.getFullYear() + 10);
+  const e = `${String(exp.getFullYear()).slice(2)}${String(exp.getMonth() + 1).padStart(2, '0')}${String(exp.getDate()).padStart(2, '0')}`;
+  const sex = row.sexe === 'M' || row.sexe === 'F' ? row.sexe : '<';
+  const l1 = (`ID${row.pays_code}` + row.card_number.replace('-', '')).padEnd(30, '<');
+  const l2 = `${y.slice(2)}${m}${d}0${sex}${e}0${row.pays_code}`.padEnd(29, '<') + '0';
   const l3 = `${mrzClean(row.nom)}<<${mrzClean(row.prenom)}`;
-  return [l1, l2.padEnd(30, '<'), l3.padEnd(30, '<').slice(0, 30)];
+  return [l1, l2, l3.padEnd(30, '<').slice(0, 30)];
 }
 
 const fmtDate = (iso, addYears = 0) => {
@@ -644,6 +675,9 @@ async function renderCard(row, user, member) {
     try { photo = await fetchImage(url); break; } catch { /* suivante */ }
   }
 
+  const country = countryOf(row);
+  const flag = country ? await getFlag(country.iso2) : null;
+
   const W = 1012, H = 638;
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
@@ -668,25 +702,31 @@ async function renderCard(row, user, member) {
   const hb = ctx.createLinearGradient(0, 0, W, 0);
   hb.addColorStop(0, '#14305e'); hb.addColorStop(1, '#2f62ab');
   ctx.fillStyle = hb;
-  ctx.fillRect(0, 0, W, 112);
-  ['#000000', '#fdda24', '#ef3340'].forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(36 + i * 14, 28, 14, 56); });
+  ctx.fillRect(0, 0, W, 130);
 
+  // Drapeau du pays de la nationalité
+  const fx = 40, fy = 20, fw = 140, fh = 90;
+  if (flag) {
+    const s = Math.min(fw / flag.width, fh / flag.height);
+    const dw = flag.width * s, dh = flag.height * s;
+    const dx = fx + (fw - dw) / 2, dy = fy + (fh - dh) / 2;
+    ctx.drawImage(flag, dx, dy, dw, dh);
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(dx, dy, dw, dh);
+  }
+
+  // Nom officiel du pays + titre
+  const officiel = (country?.officiel || natAdj(row)).toUpperCase();
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'left';
-  ctx.font = `16px ${REG}`;
-  ctx.fillText('BRUXELLES ROLE-PLAY', 98, 44);
-  ctx.font = `40px ${BOLD}`;
-  ctx.fillText('CARTE D’IDENTITÉ', 98, 90);
-
-  ctx.textAlign = 'right';
-  fitFont(ctx, `NATIONALITÉ ${natAdj(row).toUpperCase()}`, 470, 24, BOLD);
-  ctx.fillText(`NATIONALITÉ ${natAdj(row).toUpperCase()}`, W - 40, 52);
-  ctx.font = `16px ${REG}`;
-  ctx.fillText('IDENTITY CARD', W - 40, 88);
-  ctx.textAlign = 'left';
+  fitFont(ctx, officiel, W - 210 - 40, 46, BOLD);
+  ctx.fillText(officiel, 210, 66);
+  ctx.font = `30px ${BOLD}`;
+  ctx.fillText('CARTE D’IDENTITÉ / IDENTITY CARD', 210, 106);
 
   // Photo (buste du personnage Roblox)
-  const px = 40, py = 140, pw = 270, ph = 345;
+  const px = 40, py = 150, pw = 270, ph = 355;
   ctx.save();
   roundRect(ctx, px, py, pw, ph, 18);
   ctx.clip();
@@ -708,21 +748,41 @@ async function renderCard(row, user, member) {
   // Champs
   const field = (label, value, x, y, maxW) => {
     ctx.fillStyle = '#5b6b82';
-    ctx.font = `15px ${REG}`;
+    ctx.font = `14px ${REG}`;
     ctx.fillText(label, x, y);
     ctx.fillStyle = '#0f1f3a';
-    fitFont(ctx, value, maxW, 32, BOLD);
-    ctx.fillText(value, x, y + 36);
+    fitFont(ctx, value, maxW, 30, BOLD);
+    ctx.fillText(value, x, y + 32);
   };
-  const c1 = 350, c2 = 650;
+  const c1 = 350, c2 = 450, c3 = 690;
   field('NOM / SURNAME', row.nom.toUpperCase(), c1, 160, 620);
-  field('PRÉNOM / GIVEN NAME', row.prenom, c1, 236, 620);
-  field('NÉ(E) LE / DATE OF BIRTH', row.naissance, c1, 312, 270);
-  field('NATIONALITÉ / NATIONALITY', `${natAdj(row)} (${row.pays_code})`, c2, 312, 330);
-  field('LIEU DE NAISSANCE / PLACE OF BIRTH', row.ville, c1, 388, 270);
-  field('N° DE CARTE / CARD NO.', row.card_number, c2, 388, 330);
-  field('DÉLIVRÉE LE / ISSUED', fmtDate(row.reviewed_at), c1, 464, 270);
-  field('VALABLE JUSQU’AU / EXPIRES', fmtDate(row.reviewed_at, 10), c2, 464, 330);
+  field('PRÉNOM / GIVEN NAME', row.prenom, c1, 218, 620);
+  field('SEXE / SEX', row.sexe === 'M' || row.sexe === 'F' ? row.sexe : '—', c1, 276, 80);
+  field('NATIONALITÉ / NATIONALITY', row.pays_code, c2, 276, 220);
+  field('DATE DE NAISSANCE / DATE OF BIRTH', row.naissance, c3, 276, 280);
+  field('LIEU DE NAISSANCE / PLACE OF BIRTH', row.ville, c1, 334, 320);
+  field('N° DE CARTE / CARD NO.', row.card_number, c3, 334, 280);
+  field('DÉLIVRÉE LE / ISSUED', fmtDate(row.reviewed_at), c1, 392, 320);
+  field('VALABLE JUSQU’AU / EXPIRES', fmtDate(row.reviewed_at, 10), c3, 392, 280);
+
+  // Signature (nom en écriture manuscrite)
+  ctx.fillStyle = '#5b6b82';
+  ctx.font = `13px ${REG}`;
+  ctx.fillText('SIGNATURE DU TITULAIRE / HOLDER’S SIGNATURE', c1, 450);
+  const sig = `${row.prenom} ${cap(row.nom)}`;
+  ctx.save();
+  ctx.translate(c1 + 10, 496);
+  ctx.rotate(-0.045);
+  ctx.fillStyle = '#1b2a6b';
+  fitFont(ctx, sig, 520, 56, 'CardSign, cursive');
+  ctx.fillText(sig, 0, 0);
+  ctx.restore();
+  ctx.strokeStyle = '#9aa8c0';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(c1, 506);
+  ctx.lineTo(c1 + 560, 506);
+  ctx.stroke();
 
   // Zone de lecture automatique
   ctx.fillStyle = 'rgba(255,255,255,0.78)';
@@ -839,10 +899,6 @@ async function onCommand(i) {
       args: [target.id, i.user.id, reason, new Date().toISOString()],
     });
 
-    const identity = row
-      ? `${row.prenom} ${row.nom} • ${row.naissance} • ${row.ville} • ${row.nationalite} (${row.pays_code})`
-      : null;
-
     const dmOk = await dm(target.id, mkEmbed(0x8b0000)
       .setTitle('☠️ Ton personnage est mort')
       .setDescription(
@@ -857,7 +913,7 @@ async function onCommand(i) {
     await sendTo(CFG.BOT_LOG_CHANNEL, mkEmbed(0x8b0000).setTitle('☠️ Mort RP').addFields(
       { name: '👤 Joueur', value: `<@${target.id}>`, inline: true },
       { name: '🛡️ Staff', value: `<@${i.user.id}>`, inline: true },
-      { name: '🪪 Personnage supprimé', value: identity || 'Aucune identité enregistrée' },
+      { name: '🪪 Personnage supprimé', value: row ? summary(row) : 'Aucune identité enregistrée' },
       { name: '📝 Raison', value: reason },
       { name: '🎭 Rôles', value: roleOk ? 'Mis à jour ✅' : 'Échec ❌', inline: true },
       { name: '📩 MP', value: dmOk ? 'Envoyé ✅' : 'Échec ❌', inline: true },
@@ -874,30 +930,60 @@ async function onCommand(i) {
 }
 
 // ───────── CRÉATION D'IDENTITÉ ─────────
+// Étape 1 : choix du sexe (boutons) — Étape 2 : formulaire
+async function blockReason(userId) {
+  const row = await getIdentity(userId);
+  if (row?.status === 'approved') return '✅ Tu as déjà une carte d\'identité (`/personnage afficher`).';
+  if (row?.status === 'pending') return '⏳ Ta demande est déjà en cours de vérification.';
+  return null;
+}
+
 async function onOpen(i) {
-  const row = await getIdentity(i.user.id);
-  if (row?.status === 'approved')
-    return i.reply({ content: '✅ Tu as déjà une carte d\'identité (`/personnage afficher`).', flags: EPH });
-  if (row?.status === 'pending')
-    return i.reply({ content: '⏳ Ta demande est déjà en cours de vérification.', flags: EPH });
+  const blocked = await blockReason(i.user.id);
+  if (blocked) return i.reply({ content: blocked, flags: EPH });
+
+  return i.reply({
+    embeds: [
+      mkEmbed(0x3498db)
+        .setTitle('🪪 Création de ton identité')
+        .setDescription('**Étape 1/2** — Choisis le sexe de ton personnage.'),
+    ],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('id_sex:M').setLabel('Homme').setEmoji('👨').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('id_sex:F').setLabel('Femme').setEmoji('👩').setStyle(ButtonStyle.Primary),
+      ),
+    ],
+    flags: EPH,
+  });
+}
+
+async function onSex(i, sex) {
+  const s = sex === 'F' ? 'F' : 'M';
+  const blocked = await blockReason(i.user.id);
+  if (blocked) return i.reply({ content: blocked, flags: EPH });
 
   const input = (id, label, ph) =>
     new ActionRowBuilder().addComponents(
       new TextInputBuilder().setCustomId(id).setLabel(label).setPlaceholder(ph)
         .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(40),
     );
-  const modal = new ModalBuilder().setCustomId('id_modal').setTitle('Création de ta carte d\'identité').addComponents(
-    input('nom', 'Nom', 'Ex : Dupont'),
-    input('prenom', 'Prénom', 'Ex : Jean'),
-    input('naissance', 'Date de naissance', 'JJ/MM/AAAA'),
-    input('ville', 'Ville de naissance', 'Ex : Bruxelles'),
-    input('nationalite', 'Nationalité', 'Ex : Belge ou Belgique'),
-  );
+  const modal = new ModalBuilder()
+    .setCustomId(`id_modal:${s}`)
+    .setTitle(`Étape 2/2 — ${s === 'M' ? 'Homme' : 'Femme'}`)
+    .addComponents(
+      input('nom', 'Nom', 'Ex : Dupont'),
+      input('prenom', 'Prénom', 'Ex : Jean'),
+      input('naissance', 'Date de naissance', 'JJ/MM/AAAA'),
+      input('ville', 'Ville de naissance', 'Ex : Bruxelles'),
+      input('nationalite', 'Nationalité', 'Ex : Belge ou Belgique'),
+    );
   return i.showModal(modal);
 }
 
-async function onSubmit(i) {
+async function onSubmit(i, sex) {
   await i.deferReply({ flags: EPH });
+  const s = sex === 'F' ? 'F' : 'M';
   const g = (k) => i.fields.getTextInputValue(k).trim();
   const raw = { nom: g('nom'), prenom: g('prenom'), ville: g('ville'), nationalite: g('nationalite') };
   const date = parseDate(g('naissance'));
@@ -910,7 +996,7 @@ async function onSubmit(i) {
   if (!raw.ville || raw.ville.length < 2) errors.push('Ville de naissance invalide.');
   if (!country) errors.push('Nationalité non reconnue : écris le nom du pays (ex : France, Belgique, Maroc...).');
   if (errors.length)
-    return i.editReply({ content: '❌ Ta demande n\'a pas pu être envoyée :\n' + errors.map((e) => `• ${e}`).join('\n') + '\n\n🔁 Reclique sur le bouton pour recommencer.' });
+    return i.editReply({ content: '❌ Ta demande n\'a pas pu être envoyée :\n' + errors.map((e) => `• ${e}`).join('\n') + '\n\n🔁 Reclique sur le bouton du panneau pour recommencer.' });
 
   const existing = await getIdentity(i.user.id);
   if (existing && existing.status !== 'refused')
@@ -927,14 +1013,14 @@ async function onSubmit(i) {
   };
 
   await db.execute({
-    sql: `INSERT INTO identities (user_id, nom, prenom, naissance, ville, nationalite, pays_code, status, suspicious, flags, created_at)
-          VALUES (?,?,?,?,?,?,?, 'pending', ?, ?, ?)
+    sql: `INSERT INTO identities (user_id, nom, prenom, sexe, naissance, ville, nationalite, pays_code, status, suspicious, flags, created_at)
+          VALUES (?,?,?,?,?,?,?,?, 'pending', ?, ?, ?)
           ON CONFLICT(user_id) DO UPDATE SET
-            nom=excluded.nom, prenom=excluded.prenom, naissance=excluded.naissance, ville=excluded.ville,
+            nom=excluded.nom, prenom=excluded.prenom, sexe=excluded.sexe, naissance=excluded.naissance, ville=excluded.ville,
             nationalite=excluded.nationalite, pays_code=excluded.pays_code, status='pending',
             suspicious=excluded.suspicious, flags=excluded.flags, created_at=excluded.created_at,
             card_number=NULL, refuse_reason=NULL, reviewed_by=NULL, reviewed_at=NULL, request_message_id=NULL`,
-    args: [i.user.id, data.nom, data.prenom, data.naissance, data.ville, data.nationalite, data.pays_code,
+    args: [i.user.id, data.nom, data.prenom, s, data.naissance, data.ville, data.nationalite, data.pays_code,
       flags.length ? 1 : 0, JSON.stringify(flags), new Date().toISOString()],
   });
   await addHistory(i.user.id, 'submitted', null, flags.length ? 'suspicious' : null);
@@ -943,7 +1029,7 @@ async function onSubmit(i) {
   const msg = await (async () => {
     try {
       const ch = await client.channels.fetch(CFG.REQUEST_CHANNEL);
-      return await ch.send({ embeds: [requestEmbed(row, flags, i.user.tag)], components: [staffButtons(i.user.id)] });
+      return await ch.send({ embeds: [requestEmbed(row, flags)], components: [staffButtons(i.user.id)] });
     } catch (e) {
       console.error(e);
       return null;
@@ -952,14 +1038,8 @@ async function onSubmit(i) {
   if (msg) await db.execute({ sql: 'UPDATE identities SET request_message_id=? WHERE user_id=?', args: [msg.id, i.user.id] });
 
   await dm(i.user.id, mkEmbed(0xf1c40f)
-    .setTitle('⏳ Demande prise en compte')
-    .setDescription(
-      'Ta demande de carte d\'identité a bien été reçue !\n\n' +
-      '1️⃣ Le staff vérifie tes informations.\n' +
-      '2️⃣ Tu reçois la décision par **MP**.\n' +
-      '3️⃣ Si elle est validée, tu reçois ta **carte** et ton rôle.\n\n' +
-      '📋 Voici le récapitulatif de ta demande :',
-    )
+    .setTitle('⏳ Demande reçue')
+    .setDescription('Ta demande de carte d’identité est en cours de vérification.\nTu recevras la décision par **MP**.')
     .addFields(identityFields(row)));
 
   return i.editReply({ content: msg ? '✅ Demande envoyée ! Tu as reçu un MP de confirmation.' : '⚠️ Demande enregistrée mais le salon staff est inaccessible, préviens un administrateur.' });
@@ -993,7 +1073,7 @@ async function onAccept(i, uid) {
   }
 
   // MP : la carte en image
-  const intro = '✅ Ta demande a été **validée** par le staff !\n🎉 Voici ta carte d\'identité, ton rôle a été mis à jour.';
+  const intro = '✅ Ta demande a été **validée** par le staff !\n🎉 Voici ta carte d’identité, ton rôle a été mis à jour.';
   let dmOk;
   try {
     const user = member?.user || (await client.users.fetch(uid));
@@ -1004,11 +1084,11 @@ async function onAccept(i, uid) {
       .setImage('attachment://carte-identite.png'), [file]);
   } catch (e) {
     await botLog('❌ Carte image impossible', `Génération de la carte de <@${uid}> : ${e.message}`, 0xed4245);
-    dmOk = await dm(uid, cardEmbed(done, intro).setTitle('✅ Identité validée — Bruxelles Role-Play'));
+    dmOk = await dm(uid, cardEmbed(done, intro).setTitle('✅ Identité validée'));
   }
 
   await i.editReply({
-    embeds: [requestEmbed(done, JSON.parse(done.flags || '[]'), `<@${uid}>`)
+    embeds: [requestEmbed(done, JSON.parse(done.flags || '[]'))
       .setColor(0x2ecc71).addFields({ name: '✅ Validée', value: `Par <@${i.user.id}> • Carte \`${cardNumber}\`` })],
     components: [staffButtons(uid, true)],
   });
@@ -1017,7 +1097,7 @@ async function onAccept(i, uid) {
     { name: '👤 Membre', value: `<@${uid}>`, inline: true },
     { name: '🛡️ Staff', value: `<@${i.user.id}>`, inline: true },
     { name: '🔢 N° carte', value: `\`${cardNumber}\``, inline: true },
-    { name: '🪪 Identité', value: `${done.prenom} ${done.nom} • ${done.naissance} • ${done.ville} • ${done.nationalite} (${done.pays_code})` },
+    { name: '🪪 Identité', value: summary(done) },
     { name: '🚨 Suspect', value: done.suspicious ? 'Oui ⚠️' : 'Non', inline: true },
     { name: '🎭 Rôles', value: roleOk ? 'Mis à jour ✅' : 'Échec ❌', inline: true },
     { name: '📩 MP', value: dmOk ? 'Envoyé ✅' : 'Échec ❌', inline: true },
@@ -1055,16 +1135,16 @@ async function onRefuseSubmit(i, uid) {
   const dmOk = await dm(uid, mkEmbed(0xe74c3c)
     .setTitle('❌ Demande refusée')
     .setDescription(
-      'Ta demande de carte d\'identité a été **refusée** par le staff.\n\n' +
+      'Ta demande de carte d’identité a été **refusée** par le staff.\n\n' +
       '1️⃣ Lis la raison du refus ci-dessous.\n' +
       '2️⃣ Corrige les informations concernées.\n' +
       `3️⃣ Refais une demande depuis le panneau : <#${CFG.PANEL_CHANNEL}>.\n\n` +
-      '⚠️ Aucun rôle n\'a été modifié.',
+      '⚠️ Aucun rôle n’a été modifié.',
     )
     .addFields({ name: '📝 Raison du refus', value: reason }));
 
   await i.editReply({
-    embeds: [requestEmbed(row, JSON.parse(row.flags || '[]'), `<@${uid}>`)
+    embeds: [requestEmbed(row, JSON.parse(row.flags || '[]'))
       .setColor(0xe74c3c).addFields({ name: '❌ Refusée', value: `Par <@${i.user.id}>\nRaison : ${reason}` })],
     components: [staffButtons(uid, true)],
   });
@@ -1072,7 +1152,7 @@ async function onRefuseSubmit(i, uid) {
   await cardLog(mkEmbed(0xe74c3c).setTitle('❌ Carte refusée').addFields(
     { name: '👤 Membre', value: `<@${uid}>`, inline: true },
     { name: '🛡️ Staff', value: `<@${i.user.id}>`, inline: true },
-    { name: '🪪 Identité', value: `${row.prenom} ${row.nom} • ${row.naissance} • ${row.ville} • ${row.nationalite} (${row.pays_code})` },
+    { name: '🪪 Identité', value: summary(row) },
     { name: '📝 Raison', value: reason },
     { name: '🚨 Suspect', value: row.suspicious ? 'Oui ⚠️' : 'Non', inline: true },
     { name: '📩 MP', value: dmOk ? 'Envoyé ✅' : 'Échec ❌', inline: true },
@@ -1085,11 +1165,12 @@ client.on(Events.InteractionCreate, async (i) => {
     if (i.isChatInputCommand()) return await onCommand(i);
     if (i.isButton()) {
       if (i.customId === 'id_open') return await onOpen(i);
+      if (i.customId.startsWith('id_sex:')) return await onSex(i, i.customId.split(':')[1]);
       if (i.customId.startsWith('id_accept:')) return await onAccept(i, i.customId.split(':')[1]);
       if (i.customId.startsWith('id_refuse:')) return await onRefuseBtn(i, i.customId.split(':')[1]);
     }
     if (i.isModalSubmit()) {
-      if (i.customId === 'id_modal') return await onSubmit(i);
+      if (i.customId.startsWith('id_modal:')) return await onSubmit(i, i.customId.split(':')[1]);
       if (i.customId.startsWith('id_refuse_modal:')) return await onRefuseSubmit(i, i.customId.split(':')[1]);
     }
   } catch (e) {
