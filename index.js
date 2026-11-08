@@ -14,8 +14,8 @@ const CFG = {
   REQUEST_CHANNEL: '1568659952476889088',   // demandes d'identité (staff)
   CARD_LOG_CHANNEL: '1568662351065129051',  // logs cartes validées / refusées
   BOT_LOG_CHANNEL: '1564203403792613466',   // logs du bot (commandes, erreurs...)
-  ROLE_REMOVE: '1558228147156033716',
-  ROLE_ADD: '1517283159744577596',
+  ROLE_REMOVE: '1558228147156033716',       // rôle "sans papier" (retiré à la validation, rendu à la mort RP)
+  ROLE_ADD: '1517283159744577596',          // rôle "civil" (donné à la validation, retiré à la mort RP)
   // Staff autorisé à valider/refuser : Modérateur, Administrateur, Exécutif, Fondateur
   STAFF_ROLES: [
     '1514240629889175693', '1563694441212944434',
@@ -64,6 +64,10 @@ async function initDb() {
     user_id TEXT, action TEXT, staff_id TEXT, reason TEXT, at TEXT
   )`);
   await db.execute(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS character_deaths (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT, staff_id TEXT, reason TEXT, at TEXT
+  )`);
 }
 const getIdentity = async (uid) =>
   (await db.execute({ sql: 'SELECT * FROM identities WHERE user_id = ?', args: [uid] })).rows[0] || null;
@@ -738,6 +742,17 @@ async function buildCardFile(row, user, member) {
   return new AttachmentBuilder(buf, { name: 'carte-identite.png' });
 }
 
+// ───────── MORT RP : suppression complète du personnage ─────────
+// Ajoute ici chaque future table liée au personnage (permis, inventaire, véhicules...).
+// Chaque table doit avoir une colonne user_id.
+const CHARACTER_TABLES = ['identities', 'identity_history'];
+
+async function wipeCharacter(uid) {
+  for (const t of CHARACTER_TABLES) {
+    await db.execute({ sql: `DELETE FROM ${t} WHERE user_id = ?`, args: [uid] });
+  }
+}
+
 // ───────── COMMANDES ─────────
 const commands = [
   new SlashCommandBuilder()
@@ -751,6 +766,12 @@ const commands = [
       s.setName('afficher')
         .setDescription('Affiche la carte d\'identité d\'un personnage')
         .addUserOption((o) => o.setName('membre').setDescription('Le membre (toi par défaut)'))),
+  new SlashCommandBuilder()
+    .setName('mort-rp')
+    .setDescription('(Staff) Déclare la mort RP d\'un personnage')
+    .addUserOption((o) => o.setName('membre').setDescription('Le joueur concerné').setRequired(true))
+    .addStringOption((o) =>
+      o.setName('raison').setDescription('Raison de la mort RP').setRequired(true).setMinLength(3).setMaxLength(500)),
 ].map((c) => c.toJSON());
 
 async function onCommand(i) {
@@ -783,6 +804,72 @@ async function onCommand(i) {
       .setDescription(`👤 **Titulaire :** <@${row.user_id}>`)
       .setImage('attachment://carte-identite.png');
     return i.editReply({ embeds: [embed], files: [file] });
+  }
+
+  if (i.commandName === 'mort-rp') {
+    if (!isStaff(i)) return i.reply({ content: '❌ Réservé au staff.', flags: EPH });
+    const target = i.options.getUser('membre', true);
+    const reason = i.options.getString('raison', true).trim();
+    if (target.bot) return i.reply({ content: '❌ Tu ne peux pas cibler un bot.', flags: EPH });
+
+    await i.deferReply({ flags: EPH });
+    const row = await getIdentity(target.id);
+    const member = await i.guild.members.fetch(target.id).catch(() => null);
+    if (!row && !member?.roles.cache.has(CFG.ROLE_ADD))
+      return i.editReply({ content: `❌ <@${target.id}> n'a aucun personnage.` });
+
+    // Rôles : il perd le rôle civil et redevient sans papier
+    let roleOk = true;
+    if (member) {
+      try {
+        await member.roles.remove(CFG.ROLE_ADD);
+        await member.roles.add(CFG.ROLE_REMOVE);
+      } catch (e) {
+        roleOk = false;
+        await botLog('❌ Erreur rôles', `Mort RP : impossible de modifier les rôles de <@${target.id}> : ${e.message}`, 0xed4245);
+      }
+    } else {
+      roleOk = false; // le joueur n'est plus sur le serveur
+    }
+
+    // Suppression de toutes les données du personnage
+    await wipeCharacter(target.id);
+    await db.execute({
+      sql: 'INSERT INTO character_deaths (user_id, staff_id, reason, at) VALUES (?,?,?,?)',
+      args: [target.id, i.user.id, reason, new Date().toISOString()],
+    });
+
+    const identity = row
+      ? `${row.prenom} ${row.nom} • ${row.naissance} • ${row.ville} • ${row.nationalite} (${row.pays_code})`
+      : null;
+
+    const dmOk = await dm(target.id, mkEmbed(0x8b0000)
+      .setTitle('☠️ Ton personnage est mort')
+      .setDescription(
+        (row ? `Le staff a déclaré la **mort RP** de **${row.prenom} ${row.nom}**.\n\n` : 'Le staff a déclaré la **mort RP** de ton personnage.\n\n') +
+        '1️⃣ Tes papiers, ton permis, ton inventaire et toutes les données de ton personnage sont **supprimés**.\n' +
+        '2️⃣ Tu repasses **sans papier**.\n' +
+        `3️⃣ Pour rejouer, crée un nouveau personnage depuis le panneau : <#${CFG.PANEL_CHANNEL}>.\n\n` +
+        '⚠️ Cette décision est **définitive**.',
+      )
+      .addFields({ name: '📝 Raison', value: reason }));
+
+    await sendTo(CFG.BOT_LOG_CHANNEL, mkEmbed(0x8b0000).setTitle('☠️ Mort RP').addFields(
+      { name: '👤 Joueur', value: `<@${target.id}>`, inline: true },
+      { name: '🛡️ Staff', value: `<@${i.user.id}>`, inline: true },
+      { name: '🪪 Personnage supprimé', value: identity || 'Aucune identité enregistrée' },
+      { name: '📝 Raison', value: reason },
+      { name: '🎭 Rôles', value: roleOk ? 'Mis à jour ✅' : 'Échec ❌', inline: true },
+      { name: '📩 MP', value: dmOk ? 'Envoyé ✅' : 'Échec ❌', inline: true },
+    ));
+
+    return i.editReply({
+      content:
+        `☠️ **Mort RP appliquée** pour <@${target.id}>.\n` +
+        '🗑️ Données du personnage supprimées\n' +
+        `🎭 Rôles : ${roleOk ? 'mis à jour ✅' : 'échec ❌ (vérifie la hiérarchie des rôles ou si le joueur est encore sur le serveur)'}\n` +
+        `📩 MP : ${dmOk ? 'envoyé ✅' : 'échec ❌ (MP fermés)'}`,
+    });
   }
 }
 
