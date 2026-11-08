@@ -1,10 +1,12 @@
 const {
   Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ModalBuilder, TextInputBuilder, TextInputStyle, SlashCommandBuilder, PermissionFlagsBits,
-  Events, MessageFlags,
+  Events, MessageFlags, AttachmentBuilder,
 } = require('discord.js');
 const { createClient } = require('@libsql/client');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const http = require('http');
+const path = require('path');
 
 // ───────── CONFIG ─────────
 const CFG = {
@@ -21,6 +23,20 @@ const CFG = {
   ],
 };
 const FOOTER = 'Dev by U-lis ⚜';
+
+// ───────── POLICES DE LA CARTE ─────────
+const fontFile = (pkg, file) => path.join(__dirname, 'node_modules', '@fontsource', pkg, 'files', file);
+[
+  [fontFile('inter', 'inter-latin-400-normal.woff'), 'CardRegular'],
+  [fontFile('inter', 'inter-latin-700-normal.woff'), 'CardBold'],
+  [fontFile('ibm-plex-mono', 'ibm-plex-mono-latin-500-normal.woff'), 'CardMono'],
+].forEach(([p, name]) => {
+  try {
+    if (!GlobalFonts.registerFromPath(p, name)) console.error('Police non chargée :', name);
+  } catch (e) {
+    console.error('Police introuvable :', name, e.message);
+  }
+});
 
 // ───────── BASE DE DONNÉES (Turso) ─────────
 const db = createClient({
@@ -42,6 +58,7 @@ async function initDb() {
     created_at TEXT,
     reviewed_at TEXT
   )`);
+  await db.execute('ALTER TABLE identities ADD COLUMN roblox_id TEXT').catch(() => {}); // déjà présente ? ok
   await db.execute(`CREATE TABLE IF NOT EXISTS identity_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT, action TEXT, staff_id TEXT, reason TEXT, at TEXT
@@ -64,209 +81,209 @@ async function genCardNumber() {
   }
 }
 
-// ───────── PAYS → CODE 3 LETTRES ─────────
-// CODE|noms de pays (sans accents)|débuts de nationalité (sans accents)
-const COUNTRIES = `AFG|afghanistan|afghan
-ZAF|afrique du sud|sud africain
-ALB|albanie|albanais
-DZA|algerie|algerien
-DEU|allemagne|allemand
-AND|andorre|andorran
-AGO|angola|angolais
-ATG|antigua et barbuda|antiguayen
-SAU|arabie saoudite|saoudien
-ARG|argentine|argentin
-ARM|armenie|armenien
-AUS|australie|australien
-AUT|autriche|autrichien
-AZE|azerbaidjan|azerbaidjanais,azeri
-BHS|bahamas|bahameen
-BHR|bahrein|bahreini
-BGD|bangladesh|bangladais
-BRB|barbade|barbadien
-BEL|belgique|belge
-BLZ|belize|belizien
-BEN|benin|beninois
-BTN|bhoutan|bhoutanais
-BLR|bielorussie,belarus|bielorusse
-MMR|birmanie,myanmar|birman
-BOL|bolivie|bolivien
-BIH|bosnie herzegovine,bosnie|bosnien
-BWA|botswana|botswanais
-BRA|bresil|bresilien
-BRN|brunei|bruneien
-BGR|bulgarie|bulgare
-BFA|burkina faso|burkinabe
-BDI|burundi|burundais
-KHM|cambodge|cambodgien
-CMR|cameroun|camerounais
-CAN|canada|canadien
-CPV|cap vert|cap verdien
-CHL|chili|chilien
-CHN|chine|chinois
-CYP|chypre|chypriote
-COL|colombie|colombien
-COM|comores|comorien
-COG|congo,republique du congo,congo brazzaville|
-COD|rd congo,republique democratique du congo,congo kinshasa|
-PRK|coree du nord|nord coreen
-KOR|coree du sud,coree|sud coreen,coreen
-CRI|costa rica|costaricien,costa ricien
-CIV|cote d ivoire|ivoirien
-HRV|croatie|croate
-CUB|cuba|cubain
-DNK|danemark|danois
-DJI|djibouti|djiboutien
-DMA|dominique|dominiquais
-EGY|egypte|egyptien
-ARE|emirats arabes unis|emirien,emirati
-ECU|equateur|equatorien
-ERI|erythree|erythreen
-ESP|espagne|espagnol
-EST|estonie|estonien
-SWZ|eswatini,swaziland|swazi
-USA|etats unis,usa,etats unis d amerique,us|americain
-ETH|ethiopie|ethiopien
-FJI|fidji|fidjien
-FIN|finlande|finlandais
-FRA|france|francais
-GAB|gabon|gabonais
-GMB|gambie|gambien
-GEO|georgie|georgien
-GHA|ghana|ghaneen
-GRC|grece|grec,grecq
-GRD|grenade|grenadien
-GTM|guatemala|guatemalteque
-GIN|guinee|guineen
-GNB|guinee bissau|bissau guineen
-GNQ|guinee equatoriale|equato guineen
-GUY|guyana|guyanien
-HTI|haiti|haitien
-HND|honduras|hondurien
-HUN|hongrie|hongrois
-MHL|iles marshall|marshallais
-SLB|iles salomon|salomonais
-IND|inde|indien
-IDN|indonesie|indonesien
-IRQ|irak|irakien
-IRN|iran|iranien
-IRL|irlande|irlandais
-ISL|islande|islandais
-ISR|israel|israelien
-ITA|italie|italien
-JAM|jamaique|jamaicain
-JPN|japon|japonais
-JOR|jordanie|jordanien
-KAZ|kazakhstan|kazakh
-KEN|kenya|kenyan
-KGZ|kirghizistan|kirghize
-KIR|kiribati|kiribatien
-XKX|kosovo|kosovar
-KWT|koweit|koweitien
-LAO|laos|laotien
-LSO|lesotho|lesothan
-LVA|lettonie|letton
-LBN|liban|libanais
-LBR|liberia|liberien
-LBY|libye|libyen
-LIE|liechtenstein|liechtensteinois
-LTU|lituanie|lituanien
-LUX|luxembourg|luxembourgeois
-MKD|macedoine du nord,macedoine|macedonien
-MDG|madagascar|malgache
-MYS|malaisie|malaisien
-MWI|malawi|malawite
-MDV|maldives|maldivien
-MLI|mali|malien
-MLT|malte|maltais
-MAR|maroc|marocain
-MUS|maurice|mauricien
-MRT|mauritanie|mauritanien
-MEX|mexique|mexicain
-FSM|micronesie|micronesien
-MDA|moldavie|moldave
-MCO|monaco|monegasque
-MNG|mongolie|mongol
-MNE|montenegro|montenegrin
-MOZ|mozambique|mozambicain
-NAM|namibie|namibien
-NRU|nauru|nauruan
-NPL|nepal|nepalais
-NIC|nicaragua|nicaraguayen
-NER|niger|nigerien
-NGA|nigeria|nigerian
-NOR|norvege|norvegien
-NZL|nouvelle zelande|neo zelandais
-OMN|oman|omanais
-UGA|ouganda|ougandais
-UZB|ouzbekistan|ouzbek
-PAK|pakistan|pakistanais
-PLW|palaos|palaosien
-PSE|palestine|palestinien
-PAN|panama|panameen
-PNG|papouasie nouvelle guinee|papou
-PRY|paraguay|paraguayen
-NLD|pays bas,hollande|neerlandais,hollandais
-PER|perou|peruvien
-PHL|philippines|philippin
-POL|pologne|polonais
-PRT|portugal|portugais
-QAT|qatar|qatarien
-CAF|republique centrafricaine,centrafrique|centrafricain
-DOM|republique dominicaine|dominicain
-CZE|tchequie,republique tcheque|tcheque
-ROU|roumanie|roumain
-GBR|royaume uni,angleterre,grande bretagne,ecosse,pays de galles|britannique,anglais,ecossais,gallois
-RUS|russie|russe
-RWA|rwanda|rwandais
-KNA|saint christophe et nieves|kittitien
-LCA|sainte lucie|saint lucien
-SMR|saint marin|saint marinais
-VCT|saint vincent et les grenadines|vincentais
-SLV|salvador,el salvador|salvadorien
-WSM|samoa|samoan
-STP|sao tome et principe|santomeen
-SEN|senegal|senegalais
-SRB|serbie|serbe
-SYC|seychelles|seychellois
-SLE|sierra leone|sierra leonais
-SGP|singapour|singapourien
-SVK|slovaquie|slovaque
-SVN|slovenie|slovene
-SOM|somalie|somalien
-SDN|soudan|soudanais
-SSD|soudan du sud|sud soudanais
-LKA|sri lanka|sri lankais
-SWE|suede|suedois
-CHE|suisse|suisse
-SUR|suriname|surinamien
-SYR|syrie|syrien
-TJK|tadjikistan|tadjik
-TWN|taiwan|taiwanais
-TZA|tanzanie|tanzanien
-TCD|tchad|tchadien
-THA|thailande|thailandais
-TLS|timor oriental|timorais
-TGO|togo|togolais
-TON|tonga|tongien
-TTO|trinite et tobago|trinidadien
-TUN|tunisie|tunisien
-TKM|turkmenistan|turkmene
-TUR|turquie|turc,turq
-TUV|tuvalu|tuvaluan
-UKR|ukraine|ukrainien
-URY|uruguay|uruguayen
-VUT|vanuatu|vanuatais
-VAT|vatican,saint siege|
-VEN|venezuela|venezuelien
-VNM|vietnam,viet nam|vietnamien
-YEM|yemen|yemenite
-ZMB|zambie|zambien
-ZWE|zimbabwe|zimbabween`
+// ───────── PAYS → CODE 3 LETTRES + ADJECTIF DE NATIONALITÉ ─────────
+// CODE|noms de pays (sans accents)|débuts de nationalité (sans accents)|adjectif féminin affiché
+const COUNTRIES = `AFG|afghanistan|afghan|Afghane
+ZAF|afrique du sud|sud africain|Sud-africaine
+ALB|albanie|albanais|Albanaise
+DZA|algerie|algerien|Algérienne
+DEU|allemagne|allemand|Allemande
+AND|andorre|andorran|Andorrane
+AGO|angola|angolais|Angolaise
+ATG|antigua et barbuda|antiguayen|Antiguayenne
+SAU|arabie saoudite|saoudien|Saoudienne
+ARG|argentine|argentin|Argentine
+ARM|armenie|armenien|Arménienne
+AUS|australie|australien|Australienne
+AUT|autriche|autrichien|Autrichienne
+AZE|azerbaidjan|azerbaidjanais,azeri|Azerbaïdjanaise
+BHS|bahamas|bahameen|Bahaméenne
+BHR|bahrein|bahreini|Bahreïnienne
+BGD|bangladesh|bangladais|Bangladaise
+BRB|barbade|barbadien|Barbadienne
+BEL|belgique|belge|Belge
+BLZ|belize|belizien|Bélizienne
+BEN|benin|beninois|Béninoise
+BTN|bhoutan|bhoutanais|Bhoutanaise
+BLR|bielorussie,belarus|bielorusse|Biélorusse
+MMR|birmanie,myanmar|birman|Birmane
+BOL|bolivie|bolivien|Bolivienne
+BIH|bosnie herzegovine,bosnie|bosnien|Bosnienne
+BWA|botswana|botswanais|Botswanaise
+BRA|bresil|bresilien|Brésilienne
+BRN|brunei|bruneien|Brunéienne
+BGR|bulgarie|bulgare|Bulgare
+BFA|burkina faso|burkinabe|Burkinabée
+BDI|burundi|burundais|Burundaise
+KHM|cambodge|cambodgien|Cambodgienne
+CMR|cameroun|camerounais|Camerounaise
+CAN|canada|canadien|Canadienne
+CPV|cap vert|cap verdien|Cap-verdienne
+CHL|chili|chilien|Chilienne
+CHN|chine|chinois|Chinoise
+CYP|chypre|chypriote|Chypriote
+COL|colombie|colombien|Colombienne
+COM|comores|comorien|Comorienne
+COG|congo,republique du congo,congo brazzaville||Congolaise
+COD|rd congo,republique democratique du congo,congo kinshasa||Congolaise (RDC)
+PRK|coree du nord|nord coreen|Nord-coréenne
+KOR|coree du sud,coree|sud coreen,coreen|Sud-coréenne
+CRI|costa rica|costaricien,costa ricien|Costaricienne
+CIV|cote d ivoire|ivoirien|Ivoirienne
+HRV|croatie|croate|Croate
+CUB|cuba|cubain|Cubaine
+DNK|danemark|danois|Danoise
+DJI|djibouti|djiboutien|Djiboutienne
+DMA|dominique|dominiquais|Dominiquaise
+EGY|egypte|egyptien|Égyptienne
+ARE|emirats arabes unis|emirien,emirati|Émiratie
+ECU|equateur|equatorien|Équatorienne
+ERI|erythree|erythreen|Érythréenne
+ESP|espagne|espagnol|Espagnole
+EST|estonie|estonien|Estonienne
+SWZ|eswatini,swaziland|swazi|Swazie
+USA|etats unis,usa,etats unis d amerique,us|americain|Américaine
+ETH|ethiopie|ethiopien|Éthiopienne
+FJI|fidji|fidjien|Fidjienne
+FIN|finlande|finlandais|Finlandaise
+FRA|france|francais|Française
+GAB|gabon|gabonais|Gabonaise
+GMB|gambie|gambien|Gambienne
+GEO|georgie|georgien|Géorgienne
+GHA|ghana|ghaneen|Ghanéenne
+GRC|grece|grec,grecq|Grecque
+GRD|grenade|grenadien|Grenadienne
+GTM|guatemala|guatemalteque|Guatémaltèque
+GIN|guinee|guineen|Guinéenne
+GNB|guinee bissau|bissau guineen|Bissau-guinéenne
+GNQ|guinee equatoriale|equato guineen|Équato-guinéenne
+GUY|guyana|guyanien|Guyanienne
+HTI|haiti|haitien|Haïtienne
+HND|honduras|hondurien|Hondurienne
+HUN|hongrie|hongrois|Hongroise
+MHL|iles marshall|marshallais|Marshallaise
+SLB|iles salomon|salomonais|Salomonaise
+IND|inde|indien|Indienne
+IDN|indonesie|indonesien|Indonésienne
+IRQ|irak|irakien|Irakienne
+IRN|iran|iranien|Iranienne
+IRL|irlande|irlandais|Irlandaise
+ISL|islande|islandais|Islandaise
+ISR|israel|israelien|Israélienne
+ITA|italie|italien|Italienne
+JAM|jamaique|jamaicain|Jamaïcaine
+JPN|japon|japonais|Japonaise
+JOR|jordanie|jordanien|Jordanienne
+KAZ|kazakhstan|kazakh|Kazakhe
+KEN|kenya|kenyan|Kényane
+KGZ|kirghizistan|kirghize|Kirghize
+KIR|kiribati|kiribatien|Kiribatienne
+XKX|kosovo|kosovar|Kosovare
+KWT|koweit|koweitien|Koweïtienne
+LAO|laos|laotien|Laotienne
+LSO|lesotho|lesothan|Lesothane
+LVA|lettonie|letton|Lettone
+LBN|liban|libanais|Libanaise
+LBR|liberia|liberien|Libérienne
+LBY|libye|libyen|Libyenne
+LIE|liechtenstein|liechtensteinois|Liechtensteinoise
+LTU|lituanie|lituanien|Lituanienne
+LUX|luxembourg|luxembourgeois|Luxembourgeoise
+MKD|macedoine du nord,macedoine|macedonien|Macédonienne
+MDG|madagascar|malgache|Malgache
+MYS|malaisie|malaisien|Malaisienne
+MWI|malawi|malawite|Malawite
+MDV|maldives|maldivien|Maldivienne
+MLI|mali|malien|Malienne
+MLT|malte|maltais|Maltaise
+MAR|maroc|marocain|Marocaine
+MUS|maurice|mauricien|Mauricienne
+MRT|mauritanie|mauritanien|Mauritanienne
+MEX|mexique|mexicain|Mexicaine
+FSM|micronesie|micronesien|Micronésienne
+MDA|moldavie|moldave|Moldave
+MCO|monaco|monegasque|Monégasque
+MNG|mongolie|mongol|Mongole
+MNE|montenegro|montenegrin|Monténégrine
+MOZ|mozambique|mozambicain|Mozambicaine
+NAM|namibie|namibien|Namibienne
+NRU|nauru|nauruan|Nauruane
+NPL|nepal|nepalais|Népalaise
+NIC|nicaragua|nicaraguayen|Nicaraguayenne
+NER|niger|nigerien|Nigérienne
+NGA|nigeria|nigerian|Nigériane
+NOR|norvege|norvegien|Norvégienne
+NZL|nouvelle zelande|neo zelandais|Néo-zélandaise
+OMN|oman|omanais|Omanaise
+UGA|ouganda|ougandais|Ougandaise
+UZB|ouzbekistan|ouzbek|Ouzbèke
+PAK|pakistan|pakistanais|Pakistanaise
+PLW|palaos|palaosien|Palaosienne
+PSE|palestine|palestinien|Palestinienne
+PAN|panama|panameen|Panaméenne
+PNG|papouasie nouvelle guinee|papou|Papouane
+PRY|paraguay|paraguayen|Paraguayenne
+NLD|pays bas,hollande|neerlandais,hollandais|Néerlandaise
+PER|perou|peruvien|Péruvienne
+PHL|philippines|philippin|Philippine
+POL|pologne|polonais|Polonaise
+PRT|portugal|portugais|Portugaise
+QAT|qatar|qatarien|Qatarienne
+CAF|republique centrafricaine,centrafrique|centrafricain|Centrafricaine
+DOM|republique dominicaine|dominicain|Dominicaine
+CZE|tchequie,republique tcheque|tcheque|Tchèque
+ROU|roumanie|roumain|Roumaine
+GBR|royaume uni,angleterre,grande bretagne,ecosse,pays de galles|britannique,anglais,ecossais,gallois|Britannique
+RUS|russie|russe|Russe
+RWA|rwanda|rwandais|Rwandaise
+KNA|saint christophe et nieves|kittitien|Kittitienne
+LCA|sainte lucie|saint lucien|Saint-lucienne
+SMR|saint marin|saint marinais|Saint-marinaise
+VCT|saint vincent et les grenadines|vincentais|Vincentaise
+SLV|salvador,el salvador|salvadorien|Salvadorienne
+WSM|samoa|samoan|Samoane
+STP|sao tome et principe|santomeen|Santoméenne
+SEN|senegal|senegalais|Sénégalaise
+SRB|serbie|serbe|Serbe
+SYC|seychelles|seychellois|Seychelloise
+SLE|sierra leone|sierra leonais|Sierra-léonaise
+SGP|singapour|singapourien|Singapourienne
+SVK|slovaquie|slovaque|Slovaque
+SVN|slovenie|slovene|Slovène
+SOM|somalie|somalien|Somalienne
+SDN|soudan|soudanais|Soudanaise
+SSD|soudan du sud|sud soudanais|Sud-soudanaise
+LKA|sri lanka|sri lankais|Sri-lankaise
+SWE|suede|suedois|Suédoise
+CHE|suisse|suisse|Suisse
+SUR|suriname|surinamien|Surinamienne
+SYR|syrie|syrien|Syrienne
+TJK|tadjikistan|tadjik|Tadjike
+TWN|taiwan|taiwanais|Taïwanaise
+TZA|tanzanie|tanzanien|Tanzanienne
+TCD|tchad|tchadien|Tchadienne
+THA|thailande|thailandais|Thaïlandaise
+TLS|timor oriental|timorais|Timoraise
+TGO|togo|togolais|Togolaise
+TON|tonga|tongien|Tongienne
+TTO|trinite et tobago|trinidadien|Trinidadienne
+TUN|tunisie|tunisien|Tunisienne
+TKM|turkmenistan|turkmene|Turkmène
+TUR|turquie|turc,turq|Turque
+TUV|tuvalu|tuvaluan|Tuvaluane
+UKR|ukraine|ukrainien|Ukrainienne
+URY|uruguay|uruguayen|Uruguayenne
+VUT|vanuatu|vanuatais|Vanuatuane
+VAT|vatican,saint siege||Vaticane
+VEN|venezuela|venezuelien|Vénézuélienne
+VNM|vietnam,viet nam|vietnamien|Vietnamienne
+YEM|yemen|yemenite|Yéménite
+ZMB|zambie|zambien|Zambienne
+ZWE|zimbabwe|zimbabween|Zimbabwéenne`
   .split('\n')
   .map((l) => {
-    const [code, names, stems] = l.split('|');
-    return { code, names: names.split(','), stems: stems ? stems.split(',').filter(Boolean) : [] };
+    const [code, names, stems, adj] = l.split('|');
+    return { code, names: names.split(','), stems: stems ? stems.split(',').filter(Boolean) : [], adj };
   });
 
 const norm = (s) =>
@@ -277,6 +294,7 @@ function findCountry(input) {
   const n = norm(input);
   return COUNTRIES.find((c) => c.names.includes(n) || c.stems.some((s) => n.startsWith(s))) || null;
 }
+const natAdj = (row) => COUNTRIES.find((c) => c.code === row.pays_code)?.adj || row.nationalite;
 
 // ───────── MODÉRATION RENFORCÉE (mots / dates suspects) ─────────
 // Nettoyage anti-contournement : accents, leet (4=a, 3=e, 1=i, 0=o...), symboles, lettres répétées
@@ -390,10 +408,10 @@ const botLog = (title, desc, color = 0x2b2d31) =>
   sendTo(CFG.BOT_LOG_CHANNEL, mkEmbed(color).setTitle(title).setDescription(desc));
 const cardLog = (embed) => sendTo(CFG.CARD_LOG_CHANNEL, embed);
 
-async function dm(userId, embed) {
+async function dm(userId, embed, files = []) {
   try {
     const u = await client.users.fetch(userId);
-    await u.send({ embeds: [embed] });
+    await u.send({ embeds: [embed], files });
     return true;
   } catch {
     await botLog('⚠️ MP impossible', `Impossible d'envoyer un MP à <@${userId}> (MP fermés ?).`, 0xfaa61a);
@@ -412,6 +430,7 @@ function identityFields(row) {
   ];
 }
 
+// Version texte (secours si l'image ne peut pas être générée)
 function cardEmbed(row, intro) {
   return mkEmbed(0x2ecc71)
     .setTitle('🪪 Carte d\'identité — Bruxelles Role-Play')
@@ -501,7 +520,74 @@ async function ensurePanel() {
   }
 }
 
-// ───────── CARTE D'IDENTITÉ RP (/personnage afficher) ─────────
+// ───────── PHOTO ROBLOX ─────────
+// Tous les membres ont le pseudo Roblox comme pseudo Discord (vérification) : on retrouve le compte avec.
+async function resolveRobloxId(member, user) {
+  const nick = member?.nickname || null;
+  const names = nick ? [nick] : [user.username, user.globalName];
+  const valid = [...new Set(names.filter((n) => n && /^[A-Za-z0-9_]{3,20}$/.test(n)))];
+
+  if (valid.length) {
+    try {
+      const r = await fetch('https://users.roblox.com/v1/usernames/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernames: valid, excludeBannedUsers: true }),
+        signal: AbortSignal.timeout(5000),
+      });
+      const { data = [] } = await r.json();
+      const found = valid
+        .map((n) => data.find((d) => d.requestedUsername.toLowerCase() === n.toLowerCase()))
+        .find(Boolean);
+      if (found) return String(found.id);
+    } catch { /* on tente le plan B */ }
+  }
+
+  // Plan B : le pseudo Discord est peut-être le pseudo d'affichage Roblox
+  if (nick) {
+    try {
+      const r = await fetch(
+        `https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(nick)}&limit=10`,
+        { signal: AbortSignal.timeout(5000) },
+      );
+      const { data = [] } = await r.json();
+      const f = data.find(
+        (d) => d.name?.toLowerCase() === nick.toLowerCase() || d.displayName?.toLowerCase() === nick.toLowerCase(),
+      );
+      if (f) return String(f.id);
+    } catch { /* pas trouvé */ }
+  }
+  return null;
+}
+
+const bustCache = new Map();
+async function getBustUrl(robloxId) {
+  const hit = bustCache.get(robloxId);
+  if (hit && Date.now() - hit.at < 3600_000) return hit.url;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(
+        `https://thumbnails.roblox.com/v1/users/avatar-bust?userIds=${robloxId}&size=420x420&format=Png&isCircular=false`,
+        { signal: AbortSignal.timeout(5000) },
+      );
+      const d = (await r.json()).data?.[0];
+      if (d?.state === 'Completed' && d.imageUrl) {
+        bustCache.set(robloxId, { url: d.imageUrl, at: Date.now() });
+        return d.imageUrl;
+      }
+    } catch { /* retry */ }
+    await new Promise((res) => setTimeout(res, 1500));
+  }
+  return null;
+}
+
+async function fetchImage(url) {
+  const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
+  if (!r.ok) throw new Error(`image ${r.status}`);
+  return loadImage(Buffer.from(await r.arrayBuffer()));
+}
+
+// ───────── IMAGE DE LA CARTE D'IDENTITÉ ─────────
 const mrzClean = (s) =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]+/g, '<');
 
@@ -519,67 +605,137 @@ const fmtDate = (iso, addYears = 0) => {
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Brussels' });
 };
 
-// Photo = buste du personnage Roblox (retrouvé via le pseudo Discord)
-const robloxCache = new Map();
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
 
-async function getRobloxPhoto(member, user) {
-  const names = [...new Set(
-    [member?.nickname, user.username, member?.displayName, user.globalName]
-      .filter((n) => n && /^[A-Za-z0-9_]{3,20}$/.test(n)),
-  )];
-  if (!names.length) return null;
-
-  const key = names.join('|');
-  const hit = robloxCache.get(key);
-  if (hit && Date.now() - hit.at < 3600_000) return hit.url;
-
-  try {
-    const r = await fetch('https://users.roblox.com/v1/usernames/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usernames: names, excludeBannedUsers: true }),
-      signal: AbortSignal.timeout(5000),
-    });
-    const { data } = await r.json();
-    const found = names
-      .map((n) => data.find((d) => d.requestedUsername.toLowerCase() === n.toLowerCase()))
-      .find(Boolean);
-    if (!found) return null;
-
-    const t = await fetch(
-      `https://thumbnails.roblox.com/v1/users/avatar-bust?userIds=${found.id}&size=420x420&format=Png&isCircular=false`,
-      { signal: AbortSignal.timeout(5000) },
-    );
-    const td = (await t.json()).data?.[0];
-    const url = td?.state === 'Completed' ? td.imageUrl : null;
-    if (url) robloxCache.set(key, { url, at: Date.now() });
-    return url;
-  } catch {
-    return null;
+function fitFont(ctx, text, maxW, size, family) {
+  let s = size;
+  ctx.font = `${s}px ${family}`;
+  while (ctx.measureText(text).width > maxW && s > 14) {
+    s -= 1;
+    ctx.font = `${s}px ${family}`;
   }
 }
 
-function idCardEmbed(row, user, photoUrl) {
-  return mkEmbed(0x3b6ea5)
-    .setAuthor({ name: '🇧🇪 BRUXELLES ROLE-PLAY • CARTE D\'IDENTITÉ' })
-    .setTitle('🪪 IDENTITY CARD • CARTE D\'IDENTITÉ')
-    .setDescription(
-      `👤 **Titulaire :** <@${row.user_id}>\n` +
-      '🏛️ *Délivrée par l\'Administration communale de Bruxelles*',
-    )
-    .setThumbnail(photoUrl || user.displayAvatarURL({ size: 256 }))
-    .addFields(
-      { name: '📛 NOM / SURNAME', value: `**${row.nom}**`, inline: true },
-      { name: '🧑 PRÉNOM / GIVEN NAME', value: `**${row.prenom}**`, inline: true },
-      { name: '\u200b', value: '\u200b', inline: true },
-      { name: '🎂 NÉ(E) LE / DATE OF BIRTH', value: row.naissance, inline: true },
-      { name: '🏙️ LIEU DE NAISSANCE / PLACE OF BIRTH', value: row.ville, inline: true },
-      { name: '🌍 NATIONALITÉ / NATIONALITY', value: `${row.nationalite} (${row.pays_code})`, inline: true },
-      { name: '🔢 N° DE CARTE / CARD NO.', value: `\`${row.card_number}\``, inline: true },
-      { name: '📅 DÉLIVRÉE LE / ISSUED', value: fmtDate(row.reviewed_at), inline: true },
-      { name: '⏳ VALABLE JUSQU\'AU / EXPIRES', value: fmtDate(row.reviewed_at, 10), inline: true },
-      { name: '🔠 ZONE DE LECTURE AUTOMATIQUE', value: '```\n' + mrzLines(row).join('\n') + '\n```' },
-    );
+async function renderCard(row, user, member) {
+  // Compte Roblox (mémorisé en base une fois trouvé)
+  let rid = row.roblox_id || null;
+  if (!rid) {
+    rid = await resolveRobloxId(member, user);
+    if (rid) {
+      await db.execute({ sql: 'UPDATE identities SET roblox_id=? WHERE user_id=?', args: [rid, row.user_id] }).catch(() => {});
+    }
+  }
+  const bust = rid ? await getBustUrl(rid) : null;
+  let photo = null;
+  for (const url of [bust, user.displayAvatarURL({ extension: 'png', size: 256 })]) {
+    if (!url) continue;
+    try { photo = await fetchImage(url); break; } catch { /* suivante */ }
+  }
+
+  const W = 1012, H = 638;
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext('2d');
+  const REG = 'CardRegular, sans-serif';
+  const BOLD = 'CardBold, sans-serif';
+
+  // Fond
+  roundRect(ctx, 0, 0, W, H, 34);
+  ctx.clip();
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#dce8f7'); bg.addColorStop(0.5, '#f5f8fc'); bg.addColorStop(1, '#d3e1f3');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Motifs de sécurité
+  ctx.strokeStyle = 'rgba(44,90,160,0.07)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 22; i++) { ctx.beginPath(); ctx.arc(760, 330, 60 + i * 22, 0, Math.PI * 2); ctx.stroke(); }
+  for (let i = 0; i < 14; i++) { ctx.beginPath(); ctx.arc(120, 560, 40 + i * 20, 0, Math.PI * 2); ctx.stroke(); }
+
+  // Bandeau du haut
+  const hb = ctx.createLinearGradient(0, 0, W, 0);
+  hb.addColorStop(0, '#14305e'); hb.addColorStop(1, '#2f62ab');
+  ctx.fillStyle = hb;
+  ctx.fillRect(0, 0, W, 112);
+  ['#000000', '#fdda24', '#ef3340'].forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(36 + i * 14, 28, 14, 56); });
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.font = `16px ${REG}`;
+  ctx.fillText('BRUXELLES ROLE-PLAY', 98, 44);
+  ctx.font = `40px ${BOLD}`;
+  ctx.fillText('CARTE D’IDENTITÉ', 98, 90);
+
+  ctx.textAlign = 'right';
+  fitFont(ctx, `NATIONALITÉ ${natAdj(row).toUpperCase()}`, 470, 24, BOLD);
+  ctx.fillText(`NATIONALITÉ ${natAdj(row).toUpperCase()}`, W - 40, 52);
+  ctx.font = `16px ${REG}`;
+  ctx.fillText('IDENTITY CARD', W - 40, 88);
+  ctx.textAlign = 'left';
+
+  // Photo (buste du personnage Roblox)
+  const px = 40, py = 140, pw = 270, ph = 345;
+  ctx.save();
+  roundRect(ctx, px, py, pw, ph, 18);
+  ctx.clip();
+  const pg = ctx.createLinearGradient(px, py, px, py + ph);
+  pg.addColorStop(0, '#a9c4e8'); pg.addColorStop(1, '#e6eef9');
+  ctx.fillStyle = pg;
+  ctx.fillRect(px, py, pw, ph);
+  if (photo) {
+    const s = Math.max(pw / photo.width, ph / photo.height);
+    const dw = photo.width * s, dh = photo.height * s;
+    ctx.drawImage(photo, px + (pw - dw) / 2, py + (ph - dh) / 2, dw, dh);
+  }
+  ctx.restore();
+  roundRect(ctx, px, py, pw, ph, 18);
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#14305e';
+  ctx.stroke();
+
+  // Champs
+  const field = (label, value, x, y, maxW) => {
+    ctx.fillStyle = '#5b6b82';
+    ctx.font = `15px ${REG}`;
+    ctx.fillText(label, x, y);
+    ctx.fillStyle = '#0f1f3a';
+    fitFont(ctx, value, maxW, 32, BOLD);
+    ctx.fillText(value, x, y + 36);
+  };
+  const c1 = 350, c2 = 650;
+  field('NOM / SURNAME', row.nom.toUpperCase(), c1, 160, 620);
+  field('PRÉNOM / GIVEN NAME', row.prenom, c1, 236, 620);
+  field('NÉ(E) LE / DATE OF BIRTH', row.naissance, c1, 312, 270);
+  field('NATIONALITÉ / NATIONALITY', `${natAdj(row)} (${row.pays_code})`, c2, 312, 330);
+  field('LIEU DE NAISSANCE / PLACE OF BIRTH', row.ville, c1, 388, 270);
+  field('N° DE CARTE / CARD NO.', row.card_number, c2, 388, 330);
+  field('DÉLIVRÉE LE / ISSUED', fmtDate(row.reviewed_at), c1, 464, 270);
+  field('VALABLE JUSQU’AU / EXPIRES', fmtDate(row.reviewed_at, 10), c2, 464, 330);
+
+  // Zone de lecture automatique
+  ctx.fillStyle = 'rgba(255,255,255,0.78)';
+  ctx.fillRect(0, 520, W, 118);
+  ctx.fillStyle = '#111111';
+  ctx.font = '30px CardMono, monospace';
+  const pitch = 31, x0 = (W - 30 * pitch) / 2;
+  mrzLines(row).forEach((line, li) => {
+    [...line].forEach((ch, idx) => ctx.fillText(ch, x0 + idx * pitch, 556 + li * 34));
+  });
+
+  return canvas.encode('png');
+}
+
+async function buildCardFile(row, user, member) {
+  const buf = await renderCard(row, user, member);
+  return new AttachmentBuilder(buf, { name: 'carte-identite.png' });
 }
 
 // ───────── COMMANDES ─────────
@@ -588,10 +744,6 @@ const commands = [
     .setName('panneau-identite')
     .setDescription('Envoie le panneau de création de carte d\'identité')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder()
-    .setName('carte')
-    .setDescription('Affiche ta carte d\'identité')
-    .addUserOption((o) => o.setName('membre').setDescription('(Staff) voir la carte d\'un membre')),
   new SlashCommandBuilder()
     .setName('personnage')
     .setDescription('Commandes de ton personnage RP')
@@ -612,33 +764,25 @@ async function onCommand(i) {
     return i.reply({ content: `✅ Panneau envoyé dans <#${CFG.PANEL_CHANNEL}>.`, flags: EPH });
   }
 
-  if (i.commandName === 'carte') {
-    const target = i.options.getUser('membre');
-    if (target && target.id !== i.user.id && !isStaff(i))
-      return i.reply({ content: '❌ Seul le staff peut voir la carte d\'un autre membre.', flags: EPH });
-    const row = await getIdentity((target || i.user).id);
-    if (!row || row.status !== 'approved')
-      return i.reply({ content: '❌ Aucune carte d\'identité validée.', flags: EPH });
-    return i.reply({ embeds: [cardEmbed(row)], flags: EPH });
-  }
-
-  if (i.commandName === 'personnage') {
-    if (i.options.getSubcommand() === 'afficher') {
-      const target = i.options.getUser('membre') || i.user;
-      const row = await getIdentity(target.id);
-      if (!row || row.status !== 'approved') {
-        return i.reply({
-          content: target.id === i.user.id
-            ? `❌ Tu n'as pas encore de carte d'identité. Fais ta demande dans <#${CFG.PANEL_CHANNEL}>.`
-            : `❌ <@${target.id}> n'a pas de carte d'identité validée.`,
-          flags: EPH,
-        });
-      }
-      await i.deferReply();
-      const member = await i.guild.members.fetch(target.id).catch(() => null);
-      const photo = await getRobloxPhoto(member, target);
-      return i.editReply({ embeds: [idCardEmbed(row, target, photo)] });
+  if (i.commandName === 'personnage' && i.options.getSubcommand() === 'afficher') {
+    const target = i.options.getUser('membre') || i.user;
+    const row = await getIdentity(target.id);
+    if (!row || row.status !== 'approved') {
+      return i.reply({
+        content: target.id === i.user.id
+          ? `❌ Tu n'as pas encore de carte d'identité. Fais ta demande dans <#${CFG.PANEL_CHANNEL}>.`
+          : `❌ <@${target.id}> n'a pas de carte d'identité validée.`,
+        flags: EPH,
+      });
     }
+    await i.deferReply();
+    const member = await i.guild.members.fetch(target.id).catch(() => null);
+    const file = await buildCardFile(row, target, member);
+    const embed = mkEmbed(0x3b6ea5)
+      .setTitle(`🪪 Carte d'identité — Nationalité ${natAdj(row).toLowerCase()}`)
+      .setDescription(`👤 **Titulaire :** <@${row.user_id}>`)
+      .setImage('attachment://carte-identite.png');
+    return i.editReply({ embeds: [embed], files: [file] });
   }
 }
 
@@ -691,7 +835,7 @@ async function onSubmit(i) {
     prenom: cap(raw.prenom),
     naissance: date.str,
     ville: cap(raw.ville),
-    nationalite: cap(raw.nationalite),
+    nationalite: country.adj,
     pays_code: country.code,
   };
 
@@ -751,8 +895,9 @@ async function onAccept(i, uid) {
   const done = await getIdentity(uid);
 
   let roleOk = true;
+  let member = null;
   try {
-    const member = await i.guild.members.fetch(uid);
+    member = await i.guild.members.fetch(uid);
     await member.roles.remove(CFG.ROLE_REMOVE);
     await member.roles.add(CFG.ROLE_ADD);
   } catch (e) {
@@ -760,10 +905,20 @@ async function onAccept(i, uid) {
     await botLog('❌ Erreur rôles', `Impossible de modifier les rôles de <@${uid}> : ${e.message}`, 0xed4245);
   }
 
-  const dmOk = await dm(uid, cardEmbed(
-    done,
-    '✅ Ta demande a été **validée** par le staff !\n🎉 Voici ta carte d\'identité, ton rôle a été mis à jour.',
-  ).setTitle('✅ Identité validée — Bruxelles Role-Play'));
+  // MP : la carte en image
+  const intro = '✅ Ta demande a été **validée** par le staff !\n🎉 Voici ta carte d\'identité, ton rôle a été mis à jour.';
+  let dmOk;
+  try {
+    const user = member?.user || (await client.users.fetch(uid));
+    const file = await buildCardFile(done, user, member);
+    dmOk = await dm(uid, mkEmbed(0x2ecc71)
+      .setTitle(`✅ Identité validée — Nationalité ${natAdj(done).toLowerCase()}`)
+      .setDescription(`${intro}\n\n🔢 **N° de carte :** \`${cardNumber}\``)
+      .setImage('attachment://carte-identite.png'), [file]);
+  } catch (e) {
+    await botLog('❌ Carte image impossible', `Génération de la carte de <@${uid}> : ${e.message}`, 0xed4245);
+    dmOk = await dm(uid, cardEmbed(done, intro).setTitle('✅ Identité validée — Bruxelles Role-Play'));
+  }
 
   await i.editReply({
     embeds: [requestEmbed(done, JSON.parse(done.flags || '[]'), `<@${uid}>`)
