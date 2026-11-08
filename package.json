@@ -1,9 +1,10 @@
 {
   "name": "bruxelles-rp-id",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "main": "index.js",
   "scripts": { "start": "node index.js" },
   "dependencies": {
+    "@fontsource/great-vibes": "^5.1.0",
     "@fontsource/ibm-plex-mono": "^5.1.0",
     "@fontsource/inter": "^5.1.0",
     "@libsql/client": "^0.14.0",
