@@ -1237,6 +1237,11 @@ client.on(Events.ShardError, (e, id) => console.error(`[gateway] erreur shard ${
 client.on(Events.Error, (e) => console.error('[client] erreur :', e.message));
 client.on(Events.Warn, (m) => console.warn('[client] warn :', m));
 
+// Logs de diagnostic de la connexion (sans le bruit des heartbeats)
+client.on(Events.Debug, (m) => {
+  if (!/heartbeat/i.test(m)) console.log('[debug]', m.slice(0, 200));
+});
+
 // Watchdog : toutes les 2 min on vérifie que le bot est prêt ET que l'API Discord répond.
 // 3 échecs d'affilée (~6 min) → on quitte, Render relance le service automatiquement.
 let wdFails = 0;
@@ -1294,6 +1299,26 @@ process.on('uncaughtException', (e) => {
   process.exit(1);
 });
 
+// ───────── DIAGNOSTIC RÉSEAU DISCORD (à retirer une fois le problème réglé) ─────────
+async function diag() {
+  const t = (s) => String(s).replace(/\s+/g, ' ').slice(0, 160);
+  try {
+    const r1 = await fetch('https://discord.com/api/v10/gateway', { signal: AbortSignal.timeout(10_000) });
+    console.log(`[diag] /gateway → HTTP ${r1.status} | cf-ray=${r1.headers.get('cf-ray')} | ${t(await r1.text())}`);
+  } catch (e) {
+    console.error('[diag] /gateway injoignable :', e.message);
+  }
+  try {
+    const r2 = await fetch('https://discord.com/api/v10/users/@me', {
+      headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    console.log(`[diag] /users/@me → HTTP ${r2.status} | ${t(await r2.text())}`);
+  } catch (e) {
+    console.error('[diag] /users/@me injoignable :', e.message);
+  }
+}
+
 // ───────── DÉMARRAGE ─────────
 async function start() {
   // Base de données (3 essais au cas où Turso soit lent à répondre)
@@ -1308,13 +1333,15 @@ async function start() {
     }
   }
 
-  // Si le bot n'est pas connecté à Discord après 3 min, on redémarre
+  await diag();
+
+  // Si le bot n'est pas connecté à Discord après 10 min, on redémarre
   setTimeout(() => {
     if (!client.isReady()) {
-      console.error('Pas connecté à Discord après 3 min, redémarrage');
+      console.error('Pas connecté à Discord après 10 min, redémarrage');
       process.exit(1);
     }
-  }, 3 * 60_000);
+  }, 10 * 60_000);
 
   await client.login(process.env.DISCORD_TOKEN);
 }
